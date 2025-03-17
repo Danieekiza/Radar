@@ -1,0 +1,54 @@
+body {
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #808080; /* Серый фон */
+}
+
+.radar-container {
+    position: relative;
+    width: 100vmin;
+    height: 100vmin;
+    background-color: #000; /* Черное поле радара */
+    border-radius: 50%;
+    /* 12 концентрических окружностей */
+    background-image: repeating-radial-gradient(
+        circle at center,
+        transparent 0%,
+        #333 0% 1%,
+        transparent 1% 8.33%,
+        #333 8.33% 8.34%,
+        transparent 8.34% 100%
+    );
+    /* 12 диаметральных линий */
+    background-image: repeating-conic-gradient(
+        from 0deg,
+        #333 0deg 1deg,
+        transparent 1deg 30deg
+    );
+    background-blend-mode: multiply;
+    overflow: hidden;
+}
+
+.radar-line {
+    position: absolute;
+    width: 2px;
+    height: 50%;
+    background: #0f0;
+    left: 50%;
+    top: 0;
+    transform-origin: bottom center;
+    transform: translateX(-50%);
+}
+
+.intersection-point {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #0f0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+}

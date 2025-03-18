@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Radar</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        #coordsDisplay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="radarCanvas"></canvas>
+    <div id="coordsDisplay">Coordinates: (r: 0, φ: 0°)</div>
+
+    <script>
+        const canvas = document.getElementById('radarCanvas');
+        const ctx = canvas.getContext('2d');
+        const coordsDisplay = document.getElementById('coordsDisplay');
+
+        // Настройка размеров canvas под окно
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Конфигурация радара
+        const config = {
+            maxRadius: 400,     // Максимальный радиус радара
+            gridStep: 50,       // Шаг сетки
+            radialLines: 12,    // Количество радиальных линий
+            radarColor: '#00ff00', // Цвет радарной линии
+            gridColor: '#808080',  // Цвет сетки
+            labelOffset: 10,    // Отступ для подписей
+            circleLabelOffset: 10, // Смещение подписей окружностей вниз
+            thickCircleColor: '#a0a0a0', // Цвет толстых окружностей
+            thickCircleWidth: 1.5 // Толщина толстых окружностей
+        };
+
+        // Перевод полярных координат в декартовы
+        function polarToCartesian(r, phi) {
+            return {
+                x: r * Math.sin(phi), // Изменено для начала отсчета с вертикальной линии
+                y: -r * Math.cos(phi) // Ось Y направлена вверх
+            };
+        }
+
+        // Перевод декартовых координат в полярные
+        function cartesianToPolar(x, y) {
+            const r = Math.sqrt(x * x + y * y);
+            let phi = Math.atan2(y, x) + Math.PI / 2; // угол в радианах от ОХ до точки (x,y) + pi/2
+            if (phi < 0) phi += 2 * Math.PI; // Приводим угол к диапазону [0, 2π]
+            return { r, phi };
+        }
+
+        // Отрисовка круговой сетки
+        function drawGrid() {
+            ctx.strokeStyle = config.gridColor;
+            ctx.font = '12px Arial';
+            ctx.fillStyle = config.gridColor;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Концентрические окружности
+            for (let r = config.gridStep; r <= config.maxRadius; r += config.gridStep) {
+                // Увеличиваем толщину для окружностей с радиусом, кратным 100
+                if (r % 100 === 0) {
+                    ctx.lineWidth = config.thickCircleWidth;
+                    ctx.strokeStyle = config.thickCircleColor;
+                } else {
+                    ctx.lineWidth = 0.8;
+                    ctx.strokeStyle = config.gridColor;
+                }
+
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Подписи к окружностям в направлениях 0°, 90°, 180°, 270°
+                if (r % 50 === 0) {
+                    // Подпись для 0°
+                    const pos0 = polarToCartesian(r - config.labelOffset, 0); // Смещение на labelOffset
+                    ctx.fillText(r.toString(), pos0.x - 10, pos0.y);
+
+                    // Подпись для 90°
+                    const pos90 = polarToCartesian(r - config.labelOffset, Math.PI / 2); // 90° в радианах
+                    ctx.fillText(r.toString(), pos90.x, pos90.y + 8);
+
+                    // Подпись для 180°
+                    const pos180 = polarToCartesian(r - config.labelOffset, Math.PI); // 180° в радианах
+                    ctx.fillText(r.toString(), pos180.x - 10, pos180.y);
+
+                    // Подпись для 270°
+                    const pos270 = polarToCartesian(r - config.labelOffset, (3 * Math.PI) / 2); // 270° в радианах
+                    ctx.fillText(r.toString(), pos270.x, pos270.y + 8);
+                }
+            }
+
+            // Радиальные линии
+            const angleStep = (Math.PI * 2) / config.radialLines;
+            for (let i = 0; i < config.radialLines; i++) {
+                const angle = angleStep * i;
+                const start = polarToCartesian(50, angle);
+                const end = polarToCartesian(config.maxRadius, angle);
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+
+                // Подписи к радиальным линиям
+                const labelAngle = (angle * 180 / Math.PI).toFixed(0);
+                const labelPos = polarToCartesian(config.maxRadius + config.labelOffset, angle);
+                ctx.save();
+                ctx.translate(labelPos.x, labelPos.y);
+                ctx.rotate(angle);
+                ctx.textAlign = 'center';
+                ctx.fillText(`${labelAngle}°`, 0, 0);
+                ctx.restore();
+            }
+        }
+
+        // Класс радарной линии
+        class RadarLine {
+            constructor() {
+                this.angle = 0; // Начинаем с угла 0 (вертикально вверх)
+                this.speed = 0.02; // Скорость вращения (рад/кадр)
+            }
+
+            update() {
+                this.angle += this.speed;
+                if (this.angle > Math.PI * 2) this.angle -= Math.PI * 2;
+            }
+
+            draw() {
+                const end = polarToCartesian(config.maxRadius, this.angle);
+                ctx.strokeStyle = config.radarColor;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+            }
+        }
+
+        const radarLine = new RadarLine();
+
+        // Обработчик движения мыши
+        function handleMouseMove(event) {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left - canvas.width / 2;
+            const y = event.clientY - rect.top - canvas.height / 2;
+
+            // Преобразуем в полярные координаты
+            const { r, phi } = cartesianToPolar(x, y);
+            const phiDeg = (phi * 180 / Math.PI).toFixed(0); // Переводим в градусы
+
+            // Обновляем отображение координат
+            if (r <= config.maxRadius) {
+                coordsDisplay.textContent = `Coordinates: (r: ${Math.round(r)}, deg: ${phiDeg}°)`;
+            } else {
+                coordsDisplay.textContent = 'Coordinates: outside radar';
+            }
+        }
+
+        canvas.addEventListener('mousemove', handleMouseMove);
+
+        // Основной цикл анимации
+        function animate() {
+            // Центрируем систему координат
+            ctx.setTransform(1, 0, 0, 1, canvas.width / 2, canvas.height / 2);
+
+            // Очистка экрана
+            ctx.fillStyle = '#000';
+            ctx.fillRect(-canvas.width / 2, -canvas.height / 2, canvas.width, canvas.height);
+
+            // Отрисовка элементов
+            drawGrid();
+            radarLine.update();
+            radarLine.draw();
+
+            requestAnimationFrame(animate);
+        }
+
+        // Запуск анимации
+        animate();
+    </script>
+</body>
+</html>

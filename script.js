@@ -27,7 +27,7 @@ const config = {
 // Перевод декартовых координат в полярные
 function cartesianToPolar(x, y) {
     const r = Math.sqrt(x * x + y * y); // Радиус
-    let phi = Math.atan2(y, x) + Math.PI / 2; // Угол в радианах
+    let phi = Math.atan2(y, x) + Math.PI / 2; // Угол в радианах со смещением 90град
     if (phi < 0) phi += 2 * Math.PI; // Приводим угол к диапазону [0, 2π]
     return { r, phi };
 }
@@ -78,7 +78,9 @@ function drawGrid() {
     // Радиальные линии
     const angleStep = (Math.PI * 2) / config.radialLines;
     for (let i = 0; i < config.radialLines; i++) {
-        const angle = angleStep * i; // Смещение на 90° против часовой стрелки
+        // Угол с 0° вверху и по часовой стрелке
+        const angle = angleStep * i;
+        
         const startX = centerX + Math.cos(angle) * config.gridStep;
         const startY = centerY + Math.sin(angle) * config.gridStep;
         const endX = centerX + Math.cos(angle) * config.maxRadius;
@@ -90,10 +92,12 @@ function drawGrid() {
         ctx.stroke();
 
         // Подписи к радиальным линиям
-        const labelAngle = (angle * 180 / Math.PI ).toFixed(0); // Угол в градусах
-        const labelRadius = config.maxRadius + config.labelOffset; // Радиус для подписей
-        const labelX = centerX + Math.cos(angle) * labelRadius; // Позиция X
-        const labelY = centerY + Math.sin(angle) * labelRadius; // Позиция Y
+        let labelAngle = (angle * 180 / Math.PI - 270).toFixed(0); // так работает не трогать
+        labelAngle = (labelAngle < 0) ? 360 + Number(labelAngle) : labelAngle;
+        
+        const labelRadius = config.maxRadius + config.labelOffset;
+        const labelX = centerX + Math.cos(angle) * labelRadius;
+        const labelY = centerY + Math.sin(angle) * labelRadius;
 
         // Рисуем подпись
         ctx.save();

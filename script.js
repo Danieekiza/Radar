@@ -21,7 +21,8 @@ const config = {
     thickCircleColor: '#a0a0a0', // Цвет толстых окружностей
     thickCircleWidth: 1.5, // Толщина толстых окружностей
     cursorColor: '#ff0000', // Цвет курсора
-    cursorSize: 10 // Размер курсора
+    cursorSize: 10, // Размер курсора
+    scaleMultiplier: 1 // Множитель масштаба для подписей (по умолчанию 1)
 };
 
 // Перевод декартовых координат в полярные
@@ -32,11 +33,27 @@ function cartesianToPolar(x, y) {
     return { r, phi };
 }
 
+// Обработчик кнопки масштаба
+const scaleButton = document.getElementById('scaleButton');
+const scaleValues = [1, 0.5, 0.25]; // Масштабы для 400, 200 и 100 км
+const scaleLabels = ['400 km', '200 km', '100 km']; // Соответствующие подписи
+let currentScaleIndex = 0; // Начинаем с 400 км
+
+scaleButton.textContent = scaleLabels[currentScaleIndex]; // Устанавливаем начальную подпись
+
+scaleButton.addEventListener('click', function() {
+    currentScaleIndex = (currentScaleIndex + 1) % scaleValues.length;
+    config.scaleMultiplier = scaleValues[currentScaleIndex];
+    
+    // Обновляем текст кнопки
+    this.textContent = scaleLabels[currentScaleIndex];
+});
+
 // Отрисовка круговой сетки
 function drawGrid() {
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
-
+    
     ctx.strokeStyle = config.gridColor;
     ctx.lineWidth = 0.8;
     ctx.font = '12px Arial';
@@ -59,19 +76,22 @@ function drawGrid() {
         ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Подписи к окружностям в направлениях 0°, 90°, 180°, 270°
+        // Подписи к окружностям с учетом масштаба
         if (r % 50 === 0) {
+            // Применяем множитель масштаба к значению подписи
+            const scaledValue = Math.round(r * config.scaleMultiplier);
+            
             // Подпись для 0° (вверх)
-            ctx.fillText(r.toString(), centerX + 11, centerY - r + 11);
+            ctx.fillText(scaledValue.toString(), centerX + 11, centerY - r + 11);
 
             // Подпись для 90° (вправо)
-            ctx.fillText(r.toString(), centerX + r - 11, centerY - 6);
+            ctx.fillText(scaledValue.toString(), centerX + r - 11, centerY - 6);
 
             // Подпись для 180° (вниз)
-            ctx.fillText(r.toString(), centerX - 11, centerY + r - 8);
+            ctx.fillText(scaledValue.toString(), centerX - 11, centerY + r - 8);
 
             // Подпись для 270° (влево)
-            ctx.fillText(r.toString(), centerX - r + 11, centerY + 9);
+            ctx.fillText(scaledValue.toString(), centerX - r + 11, centerY + 9);
         }
     }
 
@@ -80,7 +100,7 @@ function drawGrid() {
     for (let i = 0; i < config.radialLines; i++) {
         // Угол с 0° вверху и по часовой стрелке
         const angle = angleStep * i;
-        
+
         const startX = centerX + Math.cos(angle) * config.gridStep;
         const startY = centerY + Math.sin(angle) * config.gridStep;
         const endX = centerX + Math.cos(angle) * config.maxRadius;
@@ -92,9 +112,9 @@ function drawGrid() {
         ctx.stroke();
 
         // Подписи к радиальным линиям
-        let labelAngle = (angle * 180 / Math.PI - 270).toFixed(0); // так работает не трогать
+        let labelAngle = (angle * 180 / Math.PI - 270).toFixed(0);
         labelAngle = (labelAngle < 0) ? 360 + Number(labelAngle) : labelAngle;
-        
+
         const labelRadius = config.maxRadius + config.labelOffset;
         const labelX = centerX + Math.cos(angle) * labelRadius;
         const labelY = centerY + Math.sin(angle) * labelRadius;
@@ -152,9 +172,10 @@ function handleMouseMove(event) {
     const { r, phi } = cartesianToPolar(mouseX, mouseY);
     const phiDeg = (phi * 180 / Math.PI).toFixed(0); // Угол в градусах
 
-    // Обновляем текст в элементе coordsDisplay
+    // Обновляем текст в элементе coordsDisplay с учетом масштаба
     if (r <= config.maxRadius) {
-        coordsDisplay.textContent = `Координаты: (r: ${Math.round(r)}, φ: ${phiDeg}°)`;
+        const scaledR = Math.round(r * config.scaleMultiplier);
+        coordsDisplay.textContent = `Координаты: (r: ${scaledR}, φ: ${phiDeg}°)`;
     } else {
         coordsDisplay.textContent = 'Координаты: за пределами радара';
     }

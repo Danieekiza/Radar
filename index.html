@@ -25,6 +25,10 @@
             border: none;
             border-radius: 4px;
             margin: 10px;
+            transition: opacity 0.9s ease;
+        }
+        button:disabled {
+            cursor: not-allowed;
         }
         canvas {
             display: block;
@@ -44,10 +48,33 @@
 </head>
 <body>
     <div id="controls">
-        <button id="scaleButton">Переключить масштаб (25-200)</button>
+        <button id="scaleButton">400 km</button>
+        <button id="startButton">Start</button>
     </div>
     <canvas id="radarCanvas"></canvas>
     <div id="coordsDisplay">Координаты: (r: 0, φ: 0°)</div>
+
+    <!-- Обновляем отладочное окно -->
+    <div id="debugTable" style="position: fixed; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00;">
+        <h3 style="margin: 0 0 10px 0; color: #00ff00;">Debug Info</h3>
+        <!-- Добавляем поле для времени -->
+        <div id="gameTimer" style="margin-bottom: 10px; font-size: 1.2em;">
+            Time: 0.0 sec
+        </div>
+        <table id="targetTable" style="border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="border: 1px solid #00ff00; padding: 5px;">ID</th>
+                    <th style="border: 1px solid #00ff00; padding: 5px;">r</th>
+                    <th style="border: 1px solid #00ff00; padding: 5px;">φ°</th>
+                    <th style="border: 1px solid #00ff00; padding: 5px;">Speed</th>
+                    <th style="border: 1px solid #00ff00; padding: 5px;">Target Angle</th>
+                </tr>
+            </thead>
+            <tbody id="targetTableBody">
+            </tbody>
+        </table>
+    </div>
     <script src="script.js"></script>
 </body>
 </html>

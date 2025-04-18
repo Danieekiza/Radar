@@ -397,6 +397,34 @@ function targetPrint() {
 // Добавим константу для времени задержки
 const BUTTON_DELAY = 1000; // Унифицированная задержка 1 секунда
 
+// Переменные для хранения координат клика
+let clickX = 0;
+let clickY = 0;
+
+// Обработчик нажатия на левую кнопку мыши
+canvas.addEventListener('click', function(event) {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left; // Вычисляем координату X относительно канваса
+    const mouseY = event.clientY - rect.top; // Вычисляем координату Y относительно канваса
+
+    // Проверяем, находится ли клик в пределах канваса
+    if (mouseX >= 0 && mouseX <= canvas.width && mouseY >= 0 && mouseY <= canvas.height) {
+        clickX = mouseX - (canvas.width / 2); // Вычисляем координату X относительно центра канваса
+        clickY = mouseY - (canvas.height / 2); // Вычисляем координату Y относительно центра канваса
+
+        // Переводим в полярные координаты
+        const r = Math.sqrt(clickX * clickX + clickY * clickY); // Радиус
+        const phi = Math.atan2(clickY, clickX) * (180 / Math.PI); // Угол в градусах
+
+        // Учитываем выбранный масштаб
+        const displayScale = scaleValues[currentScaleIndex]; // Получаем текущий масштаб
+        const scaledR = r * displayScale; // Масштабируем радиус
+
+        // Обновляем поле click в окне Debug Info
+        document.getElementById('clickCoords').textContent = `Click: (r: ${scaledR.toFixed(1)}, φ: ${phi.toFixed(1)}°)`;
+    }
+});
+
 // Функция обновления отладочной таблицы
 function updateDebugTable() {
     const tableBody = document.getElementById('targetTableBody');
@@ -411,7 +439,8 @@ function updateDebugTable() {
             target.r.toFixed(1),
             ((target.phi * 180 / Math.PI) % 360).toFixed(1),
             target.speed.toFixed(1),
-            target.targetAngle.toFixed(1)
+            target.targetAngle.toFixed(1),
+            `Click: (r: ${(Math.sqrt(clickX * clickX + clickY * clickY) * scaleValues[currentScaleIndex]).toFixed(1)}, φ: ${(Math.atan2(clickY, clickX) * (180 / Math.PI)).toFixed(1)}°)` // Добавляем координаты клика в полярной системе с учетом масштаба
         ];
 
         // Добавляем ячейки в строку

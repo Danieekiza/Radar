@@ -5,44 +5,48 @@
     <title>Радар v7</title>
     <style>
         body {
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            background: #808080;
+            margin: 0; /* Убираем отступы по умолчанию */
+            display: flex; /* Используем flexbox для размещения элементов */
+            flex-direction: column; /* Устанавливаем вертикальное направление для body */
+            align-items: center; /* Центрируем содержимое по горизонтали */
+            min-height: 100vh; /* Устанавливаем минимальную высоту на 100% высоты окна */
+            background: #808080; /* Устанавливаем серый фон */
             font-family: Arial, sans-serif;
         }
         #controls {
-            margin: 10px 0;
+            display: flex; /* Используем flexbox для размещения кнопок в одной строке */
+            justify-content: center; /* Центрируем кнопки по горизонтали */
+            margin: 10px 0; /* Устанавливаем отступы сверху и снизу */
+            width: 100%; /* Занимаем всю ширину контейнера */
         }
         button {
-            padding: 8px 16px;
-            font-size: 16px;
-            cursor: pointer;
-            background: #333;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            margin: 10px;
-            transition: opacity 0.9s ease;
+            padding: 8px 16px; /* Устанавливаем внутренние отступы для кнопок */
+            font-size: 16px; /* Устанавливаем размер шрифта для кнопок */
+            cursor: pointer; /* Изменяем курсор на указатель при наведении */
+            background: #333; /* Устанавливаем цвет фона кнопок */
+            color: white; /* Устанавливаем цвет текста кнопок */
+            border: none; /* Убираем рамку у кнопок */
+            border-radius: 4px; /* Устанавливаем скругление углов кнопок */
+            margin: 10px; /* Устанавливаем отступ между кнопками */
+            transition: opacity 0.9s ease; /* Добавляем плавный переход для изменения прозрачности */
         }
         button:disabled {
             cursor: not-allowed;
         }
         canvas {
-            display: block;
-            background-color: #000;
+            display: block; /* Отображаем canvas как блочный элемент */
+            background-color: #000; /* Устанавливаем черный цвет фона для радара */
         }
         #coordsDisplay {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: white;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 14px;
+            position: absolute; /* Устанавливаем абсолютное позиционирование для отображения координат */
+            top: 20px; /* Устанавливаем отступ сверху */
+            left: 20px; /* Устанавливаем отступ слева */
+            color: white; /* Устанавливаем цвет текста */
+            background: rgba(0, 0, 0, 0.7); /* Устанавливаем полупрозрачный черный фон */
+            padding: 10px; /* Устанавливаем внутренние отступы */
+            border-radius: 5px; /* Устанавливаем скругление углов */
+            font-family: Arial, sans-serif; /* Устанавливаем шрифт для текста */
+            font-size: 14px; /* Устанавливаем размер шрифта для текста */
         }
     </style>
 </head>
@@ -50,6 +54,7 @@
     <div id="controls">
         <button id="scaleButton">400 km</button>
         <button id="startButton">Start</button>
+        <button id="stopButton">X1</button>
     </div>
     <canvas id="radarCanvas"></canvas>
     <div id="coordsDisplay">Координаты: (r: 0, φ: 0°)</div>

@@ -528,5 +528,26 @@ startButton.addEventListener('click', function() {
     }
 });
 
+// Обновляем обработчик кнопки X1
+const stopButton = document.getElementById('stopButton');
+let xButtonCounter = 1; // Счетчик для названия кнопки
+
+stopButton.addEventListener('click', function() {
+    // Меняем название кнопки в зависимости от счетчика
+    if (xButtonCounter === 1) {
+        this.textContent = 'X2';
+        radarLine.speed = (Math.PI) / 1; // Устанавливаем скорость π/сек
+        xButtonCounter++;
+    } else if (xButtonCounter === 2) {
+        this.textContent = 'X3';
+        radarLine.speed = (2 * Math.PI) / 1; // Устанавливаем скорость 2π/сек
+        xButtonCounter++;
+    } else {
+        this.textContent = 'X1';
+        radarLine.speed = (0.5 *Math.PI) / 1; // Устанавливаем скорость 0.5π/сек
+        xButtonCounter = 1; // Сбрасываем счетчик
+    }
+});
+
 // Запуск анимации
 animate(performance.now());

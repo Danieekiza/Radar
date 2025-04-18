@@ -261,7 +261,7 @@ class Target {
         this.r -= this.speed * Math.cos(targetAngleRad) * deltaTime;
         
         if (this.r <= 0) {
-            gameState.isRunning = false;
+            resetGame(); // Вызываем resetGame для остановки игры и изменения текста кнопки
             return false;
         }
         

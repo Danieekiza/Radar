@@ -41,7 +41,7 @@ let currentScaleIndex = 0; // Начинаем с 400 км
 
 scaleButton.textContent = scaleLabels[currentScaleIndex]; // Устанавливаем начальную подпись
 
-// Обновляем флаг для принудительного обновления отображения
+// Добавляем флаг для принудительного обновления отображения
 let forceTargetDisplay = false;
 
 // Добавляем глобальную переменную для хранения текущей отображаемой точки
@@ -54,8 +54,7 @@ scaleButton.addEventListener('click', function() {
     config.scaleMultiplier = scaleValues[currentScaleIndex];
     this.textContent = scaleLabels[currentScaleIndex];
     
-    // Сбрасываем текущую точку и запрашиваем обновление
-    currentDisplayPoint = null;
+    // Устанавливаем флаг принудительного обновления
     forceTargetDisplay = true;
 });
 
@@ -282,11 +281,85 @@ class Missile extends Target {
     }
 }
 
+// Класс для анимации взрыва
+class Explosion {
+    constructor(r, phi) {
+        this.r = r; // Радиус позиции взрыва
+        this.phi = (phi * Math.PI) / 180; // Конвертируем угол из градусов в радианы
+        this.radius = 15; // Радиус самого взрыва в пикселях
+        this.duration = 0.5; // Длительность анимации в секундах
+        this.elapsedTime = 0; // Прошедшее время анимации
+        this.isActive = true; // Флаг активности взрыва
+    }
+
+    draw(ctx, centerX, centerY) {
+        if (!this.isActive) return; // Если взрыв неактивен, не рисуем его
+
+        // Получаем текущий масштаб для отображения
+        const displayScale = 400 / (scaleValues[currentScaleIndex] * 400);
+        const displayR = this.r * displayScale; // Получаем радиус с учетом масштаба
+
+        // Проверяем, находится ли взрыв в пределах отображения
+        if (displayR <= config.maxRadius) {
+            // Вычисляем координаты центра взрыва
+            const x = centerX + Math.cos(this.phi) * displayR;
+            const y = centerY + Math.sin(this.phi) * displayR;
+
+            // Настраиваем стиль для отрисовки взрыва
+            ctx.strokeStyle = 'red'; // Устанавливаем красный цвет
+            ctx.lineWidth = 2; // Устанавливаем толщину линии
+            ctx.beginPath(); // Начинаем новый путь
+            ctx.arc(x, y, this.radius * displayScale, 0, Math.PI * 2); // Рисуем окружность
+            ctx.stroke(); // Отрисовываем линию
+        } else {
+            // Если взрыв за пределами масштаба, отображаем красный треугольник
+            const triangleSize = 15;
+            const r = config.maxRadius + 20; // Размещаем треугольник за пределами радара
+            
+            // Вычисляем центр треугольника
+            const triangleCenterX = centerX + Math.cos(this.phi) * r;
+            const triangleCenterY = centerY + Math.sin(this.phi) * r;
+            
+            // Вычисляем вершины треугольника
+            const points = [];
+            for (let i = 0; i < 3; i++) {
+                const angle = this.phi + (i * 2 * Math.PI / 3);
+                points.push({
+                    x: triangleCenterX + Math.cos(angle) * (triangleSize / Math.sqrt(3)),
+                    y: triangleCenterY + Math.sin(angle) * (triangleSize / Math.sqrt(3))
+                });
+            }
+            
+            // Рисуем красный треугольник
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            ctx.lineTo(points[1].x, points[1].y);
+            ctx.lineTo(points[2].x, points[2].y);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
+    update(deltaTime) {
+        this.elapsedTime += deltaTime; // Увеличиваем прошедшее время
+        if (this.elapsedTime >= this.duration) { // Если время истекло
+            this.isActive = false; // Деактивируем взрыв
+            return false; // Возвращаем false для удаления взрыва
+        }
+        return true; // Взрыв все еще активен
+    }
+}
+
+// Множество для хранения активных взрывов
+const activeExplosions = new Set();
+
 // Класс AntiMissile, унаследованный от Target
 class AntiMissile extends Target {
-    constructor(r, phi, speed, targetAngle) {
+    constructor(r, phi, speed, targetAngle, targetR) {
         super(r, phi, speed, targetAngle); // Pass all parameters to the parent class
-        console.log(`AntiMissile created with parameters: r = ${this.r}, phi = ${this.phi}, speed = ${this.speed}, targetAngle = ${this.targetAngle}`);
+        this.targetR = targetR; // Сохраняем целевой радиус
+        console.log(`AntiMissile created with parameters: r = ${this.r}, phi = ${this.phi}, speed = ${this.speed}, targetAngle = ${this.targetAngle}, targetR = ${this.targetR}`);
     }
 
     update(deltaTime) {
@@ -294,6 +367,17 @@ class AntiMissile extends Target {
         
         // Обновляем позицию с учетом реального времени
         this.r -= this.speed * Math.cos(targetAngleRad) * deltaTime;
+        
+        // Проверяем достижение целевого радиуса с увеличенной погрешностью
+        if (Math.abs(this.r - this.targetR) < 0.2) {
+            // Получаем текущий масштаб для отображения
+            const displayScale = 400 / (scaleValues[currentScaleIndex] * 400);
+            // Создаем новый взрыв при достижении цели, передаем радиус с учетом масштаба
+            // const explosion = new Explosion(this.targetR * displayScale, this.phi);
+            const explosion = new Explosion(this.targetR, this.phi);
+            activeExplosions.add(explosion); // Добавляем взрыв в множество активных взрывов
+            return false; // Уничтожаем объект при достижении целевого радиуса
+        }
         
         if (this.r <= 0) {
             resetGame(); // Вызываем resetGame для остановки игры и изменения текста кнопки
@@ -327,14 +411,13 @@ function targetInit() {
 // Обновляем функцию отрисовки треугольника
 function drawTriangle(centerX, centerY, phi) {
     const triangleSize = 15;
-    const r = 420;
+    const r = config.maxRadius + 20; // Размещаем треугольник за пределами радара
     
     // Вычисляем центр треугольника
     const triangleCenterX = centerX + Math.cos(phi) * r;
     const triangleCenterY = centerY + Math.sin(phi) * r;
     
     // Вычисляем вершины треугольника
-    // Добавляем поворот на 60 градусов (Math.PI/3) по часовой стрелке
     const points = [];
     for (let i = 0; i < 3; i++) {
         const angle = phi + (i * 2 * Math.PI / 3); // Добавляем Math.PI/3 для поворота на 60°
@@ -355,42 +438,47 @@ function drawTriangle(centerX, centerY, phi) {
 }
 
 // Функция для отображения целей на радаре
-function targetPrint() {
+function targetPrint(deltaTime) {
     const centerX = canvas.width / 2; // Находим центр канваса по оси X
     const centerY = canvas.height / 2; // Находим центр канваса по оси Y
     
+    // Получаем текущий масштаб для отображения
+    const displayScale = 400 / (scaleValues[currentScaleIndex] * 400);
+    
     // Проходим по всем активным целям
     for (const target of activeTargets) {
-        const displayR = target.r; // Получаем радиус цели
+        const displayR = target.r * displayScale; // Получаем радиус цели с учетом масштаба
         let targetPhi = target.phi; // Получаем угол цели в радианах
+        
+        // Преобразуем угол в радианы, если он в градусах
+        if (target instanceof AntiMissile) {
+            targetPhi = (targetPhi * Math.PI) / 180; // Конвертируем градусы в радианы
+        }
+        
+        // Нормализуем углы для корректного сравнения
+        const normalizedTargetPhi = ((targetPhi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        const currentAngle = ((radarLine.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        const lastAngle = ((radarLine.lastAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
         
         // Проверяем, находится ли цель в пределах отображения
         if (displayR <= config.maxRadius) {
-            // Преобразуем угол в радианы, если он в градусах
-            if (target instanceof AntiMissile) {
-                targetPhi = (targetPhi * Math.PI) / 180; // Конвертируем градусы в радианы
-            }
-            
-            // Нормализуем углы для корректного сравнения
-            const normalizedTargetPhi = ((targetPhi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-            const currentAngle = ((radarLine.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-            const lastAngle = ((radarLine.lastAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-            
-            // Проверяем, прошла ли радарная линия через позицию цели
-            let shouldUpdate = false;
-            if (lastAngle < currentAngle) {
-                // Нормальный случай: радарная линия движется по часовой стрелке
-                if (normalizedTargetPhi >= lastAngle && normalizedTargetPhi < currentAngle) {
-                    shouldUpdate = true;
-                }
-            } else {
-                // Случай перехода через 0/360 градусов
-                if (normalizedTargetPhi >= lastAngle || normalizedTargetPhi < currentAngle) {
-                    shouldUpdate = true;
+            // Проверяем, прошла ли радарная линия через позицию цели или требуется принудительное обновление
+            let shouldUpdate = forceTargetDisplay;
+            if (!shouldUpdate) {
+                if (lastAngle < currentAngle) {
+                    // Нормальный случай: радарная линия движется по часовой стрелке
+                    if (normalizedTargetPhi >= lastAngle && normalizedTargetPhi < currentAngle) {
+                        shouldUpdate = true;
+                    }
+                } else {
+                    // Случай перехода через 0/360 градусов
+                    if (normalizedTargetPhi >= lastAngle || normalizedTargetPhi < currentAngle) {
+                        shouldUpdate = true;
+                    }
                 }
             }
             
-            // Если радарная линия прошла через позицию цели, обновляем последнюю известную позицию
+            // Если радарная линия прошла через позицию цели или требуется принудительное обновление
             if (shouldUpdate) {
                 const targetX = centerX + Math.cos(normalizedTargetPhi) * displayR;
                 const targetY = centerY + Math.sin(normalizedTargetPhi) * displayR;
@@ -400,13 +488,30 @@ function targetPrint() {
             // Отображаем цель, используя последнюю известную позицию
             const lastPosition = lastKnownPositions.get(target.id);
             if (lastPosition) {
-                ctx.fillStyle = '#00ff00'; // Устанавливаем цвет для цели
+                // Устанавливаем цвет в зависимости от типа цели
+                ctx.fillStyle = target instanceof AntiMissile ? '#ffffff' : '#00ff00'; // Белый для AntiMissile, зеленый для остальных
                 ctx.beginPath(); // Начинаем новый путь
                 ctx.arc(lastPosition.x, lastPosition.y, 3, 0, Math.PI * 2); // Рисуем круг для цели
                 ctx.fill(); // Заполняем круг цветом
             }
+        } else {
+            // Если цель находится за пределами масштаба, отображаем треугольник
+            drawTriangle(centerX, centerY, normalizedTargetPhi);
         }
     }
+    
+    // Обновляем и отрисовываем взрывы
+    const explosionsToCheck = new Set(activeExplosions);
+    for (const explosion of explosionsToCheck) {
+        if (!explosion.update(deltaTime)) {
+            activeExplosions.delete(explosion);
+        } else {
+            explosion.draw(ctx, centerX, centerY);
+        }
+    }
+    
+    // Сбрасываем флаг принудительного обновления после обработки всех целей
+    forceTargetDisplay = false;
 }
 
 // Добавим константу для времени задержки
@@ -427,8 +532,11 @@ canvas.addEventListener('click', function(event) {
         clickX = mouseX - (canvas.width / 2); // Вычисляем координату X относительно центра канваса
         clickY = mouseY - (canvas.height / 2); // Вычисляем координату Y относительно центра канваса
 
-        // Переводим в полярные координаты
-        const r = Math.sqrt(clickX * clickX + clickY * clickY); // Радиус
+        // Получаем текущий масштаб для отображения
+        const displayScale = scaleValues[currentScaleIndex]; // Получаем текущий масштаб (1, 0.5 или 0.25)
+
+        // Переводим в полярные координаты с учетом масштаба
+        const r = Math.sqrt(clickX * clickX + clickY * clickY) * displayScale; // Радиус с учетом масштаба
         let phi = Math.atan2(clickY, clickX) * (180 / Math.PI); // Угол в градусах
         // Приводим phi к диапазону [0, 360]
         if (phi < 0) {
@@ -437,8 +545,8 @@ canvas.addEventListener('click', function(event) {
 
         console.log(`Click Coordinates: X: ${clickX}, Y: ${clickY}, r: ${r}, phi: ${phi}`); // вывод в консоль
 
-        // Создаем объект AntiMissile с заданными параметрами
-        const antiMissile = new AntiMissile(1, phi, -15, 0); // Передаем r, phi, speed, targetAngle
+        // Создаем объект AntiMissile с заданными параметрами, включая целевой радиус
+        const antiMissile = new AntiMissile(1, phi, -15, 0, r); // Передаем r с учетом масштаба
 
         // Добавляем antiMissile в активные цели
         activeTargets.add(antiMissile);
@@ -453,7 +561,7 @@ canvas.addEventListener('click', function(event) {
     }
 });
 
-// Функция обновления отладочной таблицы
+// Обновляем функцию обновления отладочной таблицы
 function updateDebugTable() {
     const tableBody = document.getElementById('targetTableBody');
     tableBody.innerHTML = ''; // Очищаем таблицу
@@ -461,14 +569,22 @@ function updateDebugTable() {
     for (const target of activeTargets) {
         const row = document.createElement('tr');
         
+        // Преобразуем угол в градусы для отображения
+        let displayPhi = target.phi;
+        if (target instanceof Missile) {
+            displayPhi = (target.phi * 180 / Math.PI).toFixed(1); // Конвертируем радианы в градусы
+        } else if (target instanceof AntiMissile) {
+            displayPhi = target.phi.toFixed(1); // Оставляем один знак после запятой для AntiMissile
+        }
+        
         // Создаем ячейки с данными
         const cells = [
             target.id,
             target.r.toFixed(1),
-            target.phi.toFixed(1),
+            displayPhi,
             target.speed.toFixed(1),
             target.targetAngle.toFixed(1),
-            `Click: (r: ${(Math.sqrt(clickX * clickX + clickY * clickY) * scaleValues[currentScaleIndex]).toFixed(1)}, φ: ${(Math.atan2(clickY, clickX) * (180 / Math.PI) - Math.PI / 2).toFixed(1)}°)` // Добавляем координаты клика в полярной системе с учетом масштаба
+            `Click: (r: ${(Math.sqrt(clickX * clickX + clickY * clickY) * scaleValues[currentScaleIndex]).toFixed(1)}, φ: ${(Math.atan2(clickY, clickX) * (180 / Math.PI) - Math.PI / 2).toFixed(1)}°)`
         ];
 
         // Добавляем ячейки в строку
@@ -524,7 +640,7 @@ function animate(currentTime) {
     drawGrid();
     radarLine.update(deltaTime); // Передаем deltaTime в обновление радарной линии
     radarLine.draw();
-    targetPrint();
+    targetPrint(deltaTime); // Передаем deltaTime в функцию отрисовки целей
     drawCursor();
     
     updateGameTime();
@@ -539,6 +655,7 @@ function resetGame() {
     gameState.gameOver = false;
     activeTargets.clear();
     lastKnownPositions.clear(); // Очищаем последние известные позиции
+    activeExplosions.clear(); // Очищаем все активные взрывы при сбросе игры
     radarLine.reset();
     startButton.textContent = 'Start';
     

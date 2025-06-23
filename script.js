@@ -247,7 +247,7 @@ class Target {
     constructor(r, phi, speed, targetAngle) {
         this.id = Target.nextId++; // Уникальный ID для каждой цели
         this.r = r;
-        this.phi = phi;
+        this.phi = phi; // угол в градусах
         this.speed = speed; // Скорость в единицах в секунду
         this.targetAngle = targetAngle;
     }
@@ -290,6 +290,48 @@ class Explosion {
         this.duration = 0.5; // Длительность анимации в секундах
         this.elapsedTime = 0; // Прошедшее время анимации
         this.isActive = true; // Флаг активности взрыва
+        this.hasCheckedCollisions = false; // Флаг проверки столкновений
+    }
+
+    // Метод для проверки столкновений с целями
+    checkCollisions() {
+        // Если проверка столкновений уже была выполнена, выходим из метода
+        if (this.hasCheckedCollisions) return;
+
+        // Создаем копию множества активных целей для безопасной итерации
+        const targetsToCheck = new Set(activeTargets);
+
+        // Перебираем все цели для проверки столкновений
+        for (const target of targetsToCheck) {
+            // Если цель - AntiMissile, преобразуем phi в радианы
+            let targetPhi = target.phi;
+            if (target instanceof AntiMissile) {
+                targetPhi = (targetPhi * Math.PI) / 180;
+            }
+            // Вычисляем разницу по X между центром взрыва и целью
+            const dx = Math.cos(this.phi) * this.r - Math.cos(targetPhi) * target.r;
+            // Вычисляем разницу по Y между центром взрыва и целью
+            const dy = Math.sin(this.phi) * this.r - Math.sin(targetPhi) * target.r;
+            // Вычисляем расстояние между центром взрыва и целью по теореме Пифагора
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Проверяем, находится ли цель в радиусе действия взрыва
+            if (distance <= this.radius) {
+                // Если цель является противоракетой (AntiMissile)
+                if (target instanceof AntiMissile) {
+                    // Создаем новый взрыв на месте уничтоженной противоракеты
+                    const newExplosion = new Explosion(target.r, target.phi);
+                    activeExplosions.add(newExplosion);
+                }
+                // Удаляем цель из множества активных целей
+                activeTargets.delete(target);
+                // Удаляем последнюю известную позицию цели
+                lastKnownPositions.delete(target.id);
+            }
+        }
+
+        // Отмечаем, что проверка столкновений выполнена
+        this.hasCheckedCollisions = true;
     }
 
     draw(ctx, centerX, centerY) {
@@ -311,6 +353,9 @@ class Explosion {
             ctx.beginPath(); // Начинаем новый путь
             ctx.arc(x, y, this.radius * displayScale, 0, Math.PI * 2); // Рисуем окружность
             ctx.stroke(); // Отрисовываем линию
+
+            // Проверяем столкновения при первой отрисовке
+            this.checkCollisions();
         } else {
             // Если взрыв за пределами масштаба, отображаем красный треугольник
             const triangleSize = 15;

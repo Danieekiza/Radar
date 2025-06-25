@@ -271,13 +271,155 @@ class Target {
     }
 }
 
-// Класс ракеты, наследующийся от Target
-class Missile extends Target {
-    constructor(r, phi) {
+// Класс вражеской цели, наследующийся от Target
+// type: "11" - missile (ракета, прямолинейное движение к центру)
+// type: "12" - cruise missile (крылатая ракета, спиральное движение к центру)
+// type: "21" - bomber (бомбардировщик, полет по дуге)
+class EnemyTarget extends Target {
+    constructor(r, phi, speed, type) {
         // Вызываем конструктор родительского класса
-        super(r, phi, 0, 0); // Скорость и угол сближения будут установлены позже
-        this.initialR = r;
-        this.initialPhi = phi;
+        super(r, phi, speed, 0);
+        this.type = type; // Устанавливаем тип цели
+
+        // Логика для ракеты (прямолинейное движение)
+        if (this.type === "11") {
+            this.dr = speed; // 100% скорости направлено на изменение радиуса
+            this.dphi = 0;   // Угловая скорость равна нулю
+        } 
+        // Логика для крылатой ракеты (синусоидальное движение)
+        else if (this.type === "12") {
+            // Случайная амплитуда dphi (от 0.2 до 0.8 от скорости)
+            this.dphi_amplitude = (0.2 + Math.random() * 0.6) * this.speed;
+            // Случайное направление первой волны (по или против часовой стрелки)
+            this.dphi_sign = Math.random() < 0.5 ? -1 : 1;
+            // Случайное количество смен направления (от 2 до 4)
+            this.waveCount = 2 + Math.floor(Math.random() * 3);
+            // Массив точек смены направления (равномерно по радиусу)
+            this.waveSwitches = [];
+            for (let i = 1; i <= this.waveCount; i++) {
+                this.waveSwitches.push(config.maxRadius - i * (config.maxRadius / (this.waveCount + 1)));
+            }
+            this.currentWave = 0; // Индекс текущей волны
+            // Радиальная составляющая скорости (оставшаяся часть)
+            this.dr_base = Math.sqrt(this.speed * this.speed - this.dphi_amplitude * this.dphi_amplitude);
+        } 
+        // Логика для бомбардировщика (полет по дуге, затем по прямой)
+        else if (this.type === "21") {
+            this.phase = 'approaching'; // Фаза 1: приближение по дуге
+            this.perigee = 200; // Точка разворота (перигей)
+            // Создаем случайную траекторию дуги для первой фазы
+            const dphi_percentage = 0.2 + Math.random() * 0.6; // Случайная кривизна
+            const dphi_sign = Math.random() < 0.5 ? -1 : 1; // Случайное направление
+            const tangential_speed = this.speed * dphi_percentage;
+            this.dphi_component = tangential_speed * dphi_sign;
+            this.dr_base = this.speed * Math.sqrt(1 - dphi_percentage * dphi_percentage);
+        }
+
+        // Логика для стелс-бомбардировщика (type 22)
+        if (this.type === "22") {
+            this.phase = 'approaching'; // Фаза 1: приближение по дуге
+            this.perigee = 200; // Точка разворота (перигей)
+            // Траектория как у type 21
+            const dphi_percentage = 0.2 + Math.random() * 0.6;
+            const dphi_sign = Math.random() < 0.5 ? -1 : 1;
+            const tangential_speed = this.speed * dphi_percentage;
+            this.dphi_component = tangential_speed * dphi_sign;
+            this.dr_base = this.speed * Math.sqrt(1 - dphi_percentage * dphi_percentage);
+            // Счетчик пересечений радарной линией
+            this.radarCrossCount = 0;
+            this.lastRadarAngle = null;
+            this.visible = false; // Флаг видимости
+        }
+    }
+
+    update(deltaTime) {
+        // Обновление для ракеты (type 11)
+        if (this.type === "11") {
+            this.r -= this.dr * deltaTime; // Движение к центру
+        } 
+        // Обновление для крылатой ракеты (type 12, синусоида)
+        else if (this.type === "12") {
+            // Проверяем, не пора ли сменить знак dphi (смена волны)
+            if (this.currentWave < this.waveSwitches.length && this.r < this.waveSwitches[this.currentWave]) {
+                this.dphi_sign *= -1; // Меняем направление
+                this.currentWave++;
+            }
+            // Угловая скорость обратно пропорциональна радиусу, амплитуда и знак задают синусоиду
+            if (this.r > 0) {
+                this.dphi = (this.dphi_amplitude / this.r) * this.dphi_sign; // dphi меняет знак по волнам
+            } else {
+                this.dphi = 0;
+            }
+            this.phi += this.dphi * deltaTime; // Обновляем угол
+            this.r -= this.dr_base * deltaTime; // Обновляем радиус
+        }
+        // Обновление для бомбардировщика (Type 21)
+        else if (this.type === "21") {
+            // Фаза 1: Движение по дуге к перигею
+            if (this.phase === 'approaching') {
+                // Движение по спирали
+                if (this.r > 0) {
+                    this.dphi = this.dphi_component / this.r; // dphi для дуги
+                } else {
+                    this.dphi = 0;
+                }
+                this.phi += this.dphi * deltaTime; // Обновляем угол
+                this.r -= this.dr_base * deltaTime; // Движение к центру
+
+                // Проверка достижения перигея
+                if (this.r <= this.perigee) {
+                    this.phase = 'leaving'; // Переключаемся на фазу 2
+                    // === СОЗДАНИЕ НОВОЙ РАКЕТЫ type 11 В ТОЧКЕ ПЕРИГЕЯ ===
+                    const speed = 10 + Math.random() * 5; // Случайная скорость
+                    const phi = this.phi; // Текущий угол
+                    const enemy = new EnemyTarget(this.perigee, phi, speed, "11"); // Создаем ракету type 11
+                    activeTargets.add(enemy); // Добавляем в активные цели
+                }
+            } 
+            // Фаза 2: Прямолинейное движение от перигея к границе
+            else { // 'leaving'
+                this.r += this.speed * deltaTime; // Движемся строго по радиусу наружу
+                // Исчезаем при достижении границы
+                if (this.r >= config.maxRadius) {
+                    return false;
+                }
+            }
+        }
+
+        // Логика для стелс-бомбардировщика (type 22)
+        if (this.type === "22") {
+            if (this.phase === 'approaching') {
+                if (this.r > 0) {
+                    this.dphi = this.dphi_component / this.r;
+                } else {
+                    this.dphi = 0;
+                }
+                this.phi += this.dphi * deltaTime;
+                this.r -= this.dr_base * deltaTime;
+                // Проверка достижения перигея
+                if (this.r <= this.perigee) {
+                    this.phase = 'leaving';
+                    // Выпуск ракеты type 11
+                    const speed = 10 + Math.random() * 5;
+                    const phi = this.phi;
+                    const enemy = new EnemyTarget(this.perigee, phi, speed, "11");
+                    activeTargets.add(enemy);
+                }
+            } else { // 'leaving'
+                this.r += this.speed * deltaTime;
+                if (this.r >= config.maxRadius) {
+                    return false;
+                }
+            }
+        }
+
+        // Если цель (не бомбардировщик) достигла центра, сбрасываем игру
+        if (this.r <= 0 && this.type !== '21') {
+            resetGame();
+            return false;
+        }
+        
+        return true; // Цель продолжает существовать
     }
 }
 
@@ -286,7 +428,7 @@ class Explosion {
     constructor(r, phi) {
         this.r = r; // Радиус позиции взрыва
         this.phi = (phi * Math.PI) / 180; // Конвертируем угол из градусов в радианы
-        this.radius = 15; // Радиус самого взрыва в пикселях
+        this.radius = 40; // Радиус самого взрыва в пикселях
         this.duration = 0.5; // Длительность анимации в секундах
         this.elapsedTime = 0; // Прошедшее время анимации
         this.isActive = true; // Флаг активности взрыва
@@ -319,9 +461,11 @@ class Explosion {
             if (distance <= this.radius) {
                 // Если цель является противоракетой (AntiMissile)
                 if (target instanceof AntiMissile) {
-                    // Создаем новый взрыв на месте уничтоженной противоракеты
-                    const newExplosion = new Explosion(target.r, target.phi);
-                    activeExplosions.add(newExplosion);
+                    // Создаем новый взрыв на месте уничтоженной противоракеты с задержкой
+                    setTimeout(() => {
+                        const newExplosion = new Explosion(target.r, target.phi);
+                        activeExplosions.add(newExplosion);
+                    }, 200); // Задержка 200 мс (0.2 секунды)
                 }
                 // Удаляем цель из множества активных целей
                 activeTargets.delete(target);
@@ -354,8 +498,6 @@ class Explosion {
             ctx.arc(x, y, this.radius * displayScale, 0, Math.PI * 2); // Рисуем окружность
             ctx.stroke(); // Отрисовываем линию
 
-            // Проверяем столкновения при первой отрисовке
-            this.checkCollisions();
         } else {
             // Если взрыв за пределами масштаба, отображаем красный треугольник
             const triangleSize = 15;
@@ -387,6 +529,9 @@ class Explosion {
     }
 
     update(deltaTime) {
+        // Проверяем столкновения при обновлении, а не при отрисовке
+        this.checkCollisions();
+
         this.elapsedTime += deltaTime; // Увеличиваем прошедшее время
         if (this.elapsedTime >= this.duration) { // Если время истекло
             this.isActive = false; // Деактивируем взрыв
@@ -442,19 +587,8 @@ const activeTargets = new Set();
 // Добавляем Map для хранения последних известных позиций целей
 const lastKnownPositions = new Map();
 
-// Обновляем функцию инициализации цели
-function targetInit() {
-    const randomSpeed = 3 + Math.random() * 12; // Случайная скорость от 3 до 15
-    const randomPhi = Math.random() * 2 * Math.PI; // Случайный начальный угол
-    
-    const missile = new Missile(400, randomPhi);
-    missile.speed = randomSpeed;
-    missile.targetAngle = 0; // Фиксированный угол сближения - движение к центру
-    activeTargets.add(missile);
-}
-
 // Обновляем функцию отрисовки треугольника
-function drawTriangle(centerX, centerY, phi) {
+function drawTriangle(centerX, centerY, phi, target) {
     const triangleSize = 15;
     const r = config.maxRadius + 20; // Размещаем треугольник за пределами радара
     
@@ -473,7 +607,8 @@ function drawTriangle(centerX, centerY, phi) {
     }
     
     // Рисуем треугольник
-    ctx.fillStyle = '#00ff00';
+    // Цвет треугольника: синий для type 22, белый для AntiMissile, зеленый для остальных
+    ctx.fillStyle = target.type === "22" ? '#1010ff' : (target instanceof AntiMissile ? '#ffffff' : '#00ff0');
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     ctx.lineTo(points[1].x, points[1].y);
@@ -510,15 +645,15 @@ function targetPrint(deltaTime) {
             // Проверяем, прошла ли радарная линия через позицию цели или требуется принудительное обновление
             let shouldUpdate = forceTargetDisplay;
             if (!shouldUpdate) {
-                if (lastAngle < currentAngle) {
+        if (lastAngle < currentAngle) {
                     // Нормальный случай: радарная линия движется по часовой стрелке
-                    if (normalizedTargetPhi >= lastAngle && normalizedTargetPhi < currentAngle) {
-                        shouldUpdate = true;
-                    }
-                } else {
+            if (normalizedTargetPhi >= lastAngle && normalizedTargetPhi < currentAngle) {
+                shouldUpdate = true;
+            }
+        } else {
                     // Случай перехода через 0/360 градусов
-                    if (normalizedTargetPhi >= lastAngle || normalizedTargetPhi < currentAngle) {
-                        shouldUpdate = true;
+            if (normalizedTargetPhi >= lastAngle || normalizedTargetPhi < currentAngle) {
+                shouldUpdate = true;
                     }
                 }
             }
@@ -530,18 +665,31 @@ function targetPrint(deltaTime) {
                 lastKnownPositions.set(target.id, { x: targetX, y: targetY });
             }
             
+            // === Логика для стелс-бомбардировщика ===
+            if (target.type === "22") {
+                if (shouldUpdate) {
+                    // Считаем пересечения радарной линией
+                    if (typeof target.radarCrossCount === 'number') {
+                        target.radarCrossCount++;
+                        // Показываем только каждое третье пересечение
+                        target.visible = (target.radarCrossCount % 3 === 0);
+                    }
+                }
+                if (!target.visible) continue; // Не отображаем, если не пора
+            }
+            
             // Отображаем цель, используя последнюю известную позицию
             const lastPosition = lastKnownPositions.get(target.id);
             if (lastPosition) {
-                // Устанавливаем цвет в зависимости от типа цели
-                ctx.fillStyle = target instanceof AntiMissile ? '#ffffff' : '#00ff00'; // Белый для AntiMissile, зеленый для остальных
-                ctx.beginPath(); // Начинаем новый путь
-                ctx.arc(lastPosition.x, lastPosition.y, 3, 0, Math.PI * 2); // Рисуем круг для цели
-                ctx.fill(); // Заполняем круг цветом
+                // Цвет точки: синий для type 22, белый для AntiMissile, зеленый для остальных
+                ctx.fillStyle = target.type === "22" ? '#3030ff' : (target instanceof AntiMissile ? '#ffffff' : '#00ff00');
+                ctx.beginPath();
+                ctx.arc(lastPosition.x, lastPosition.y, 3, 0, Math.PI * 2);
+                ctx.fill();
             }
         } else {
             // Если цель находится за пределами масштаба, отображаем треугольник
-            drawTriangle(centerX, centerY, normalizedTargetPhi);
+            drawTriangle(centerX, centerY, normalizedTargetPhi, target);
         }
     }
     
@@ -616,10 +764,10 @@ function updateDebugTable() {
         
         // Преобразуем угол в градусы для отображения
         let displayPhi = target.phi;
-        if (target instanceof Missile) {
-            displayPhi = (target.phi * 180 / Math.PI).toFixed(1); // Конвертируем радианы в градусы
+        if (target instanceof EnemyTarget) {
+            displayPhi = (target.phi * 180 / Math.PI).toFixed(1);
         } else if (target instanceof AntiMissile) {
-            displayPhi = target.phi.toFixed(1); // Оставляем один знак после запятой для AntiMissile
+            displayPhi = target.phi.toFixed(1);
         }
         
         // Создаем ячейки с данными
@@ -739,7 +887,6 @@ startButton.addEventListener('click', function() {
             gameState.startTime = performance.now();
             gameState.lastFrameTime = 0;
             
-            targetInit();
             setButtonState(true);
         }, BUTTON_DELAY);
     } else {
@@ -756,17 +903,59 @@ stopButton.addEventListener('click', function() {
     // Меняем название кнопки в зависимости от счетчика
     if (xButtonCounter === 1) {
         this.textContent = 'X2';
-        radarLine.speed = (Math.PI) / 1; // Устанавливаем скорость π/сек
+        radarLine.speed = (2 * Math.PI) / 1; // Устанавливаем скорость π/сек
         xButtonCounter++;
     } else if (xButtonCounter === 2) {
         this.textContent = 'X3';
-        radarLine.speed = (2 * Math.PI) / 1; // Устанавливаем скорость 2π/сек
+        radarLine.speed = (4 * Math.PI) / 1; // Устанавливаем скорость 2π/сек
         xButtonCounter++;
     } else {
         this.textContent = 'X1';
-        radarLine.speed = (0.5 *Math.PI) / 1; // Устанавливаем скорость 0.5π/сек
+        radarLine.speed = (Math.PI) / 1; // Устанавливаем скорость 0.5π/сек
         xButtonCounter = 1; // Сбрасываем счетчик
     }
+});
+
+// Добавляем обработчики для новых кнопок
+const type11Button = document.getElementById('type11Button');
+const type12Button = document.getElementById('type12Button');
+const type21Button = document.getElementById('type21Button');
+
+// Создание ракеты (type 11)
+type11Button.addEventListener('click', function() {
+    if (!gameState.isRunning) return;
+    const speed = 10 + Math.random() * 5;
+    const phi = Math.random() * 2 * Math.PI;
+    const enemy = new EnemyTarget(config.maxRadius, phi, speed, "11");
+    activeTargets.add(enemy);
+});
+
+// Создание крылатой ракеты (type 12)
+type12Button.addEventListener('click', function() {
+    if (!gameState.isRunning) return;
+    const speed = 10 + Math.random() * 5;
+    const phi = Math.random() * 2 * Math.PI;
+    const enemy = new EnemyTarget(config.maxRadius, phi, speed, "12");
+    activeTargets.add(enemy);
+});
+
+// Создание бомбардировщика (type 21)
+type21Button.addEventListener('click', function() {
+    if (!gameState.isRunning) return;
+    const speed = 10 + Math.random() * 5;
+    const phi = Math.random() * 2 * Math.PI;
+    const enemy = new EnemyTarget(config.maxRadius, phi, speed, "21");
+    activeTargets.add(enemy);
+});
+
+// Добавляем обработчик для кнопки Type 22
+const type22Button = document.getElementById('type22Button');
+type22Button.addEventListener('click', function() {
+    if (!gameState.isRunning) return;
+    const speed = 10 + Math.random() * 5;
+    const phi = Math.random() * 2 * Math.PI;
+    const enemy = new EnemyTarget(config.maxRadius, phi, speed, "22");
+    activeTargets.add(enemy);
 });
 
 // Запуск анимации

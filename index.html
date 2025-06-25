@@ -27,7 +27,7 @@
             color: white; /* Устанавливаем цвет текста кнопок */
             border: none; /* Убираем рамку у кнопок */
             border-radius: 4px; /* Устанавливаем скругление углов кнопок */
-            margin: 10px; /* Устанавливаем отступ между кнопками */
+            margin: 5px; /* Устанавливаем отступ между кнопками */
             transition: opacity 0.9s ease; /* Добавляем плавный переход для изменения прозрачности */
         }
         button:disabled {
@@ -55,12 +55,16 @@
         <button id="scaleButton">400 km</button>
         <button id="startButton">Start</button>
         <button id="stopButton">X1</button>
+        <button id="type11Button">Type 11</button>
+        <button id="type12Button">Type 12</button>
+        <button id="type21Button">Type 21</button>
+        <button id="type22Button">Type 22</button>
     </div>
     <canvas id="radarCanvas"></canvas>
     <div id="coordsDisplay">Координаты: (r: 0, φ: 0°)</div>
 
     <!-- Обновляем отладочное окно -->
-    <div id="debugTable" style="position: absolute; top: 74px; right: 0%; background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00;">
+    <div id="debugTable" style="position: absolute; top: 74px; right: 0%; background: rgba(0, 0, 0, 0.3); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00;">
         <h3 style="margin: 0 0 10px 0; color: #00ff00;">Debug Info</h3>
         <!-- Добавляем поле для времени -->
         <div id="gameTimer" style="margin-bottom: 10px; font-size: 1.2em;">

@@ -330,6 +330,23 @@ class EnemyTarget extends Target {
             this.lastRadarAngle = null;
             this.visible = false; // Флаг видимости
         }
+        // Логика для низколетящего бомбардировщика (type 23)
+        if (this.type === "23") {
+            this.phase = 'invisible'; // Сначала невидим
+            this.hasSeparatedMissile = false;
+            this.separationRadius = 70; // Радиус отделения ракеты
+            this.minTurnRadius = 68; // Минимальный радиус для разворота
+            this.appearRadius = 350; // Радиус появления на радаре
+            this.leaving = false;
+            this.turning = false;
+            this.decelerating = false;
+            this.accelerating = false;
+            this.turnElapsed = 0;
+            this.turnTime = 2; // Время замедления/ускорения
+            this.speed0 = speed;
+            this.currentSpeed = speed;
+            this.reverseDirection = false;
+        }
     }
 
     update(deltaTime) {
@@ -355,31 +372,79 @@ class EnemyTarget extends Target {
         }
         // Обновление для бомбардировщика (Type 21)
         else if (this.type === "21") {
-            // Фаза 1: Движение по дуге к перигею
+            // --- Фаза 1: Движение по дуге к перигею (оставить как есть) ---
             if (this.phase === 'approaching') {
-                // Движение по спирали
-                if (this.r > 0) {
-                    this.dphi = this.dphi_component / this.r; // dphi для дуги
-                } else {
-                    this.dphi = 0;
+                if (!this.turnLogic21) {
+                    this.turnLogic21 = {
+                        decelerating: false,
+                        turning: false,
+                        accelerating: false,
+                        turnElapsed: 0,
+                        turnTime: 2,
+                        speed0: this.speed,
+                        currentSpeed: this.speed,
+                        separationRadius: this.perigee,
+                        minTurnRadius: this.perigee - 2,
+                        missileLaunched: false
+                    };
                 }
-                this.phi += this.dphi * deltaTime; // Обновляем угол
-                this.r -= this.dr_base * deltaTime; // Движение к центру
-
-                // Проверка достижения перигея
-                if (this.r <= this.perigee) {
-                    this.phase = 'leaving'; // Переключаемся на фазу 2
-                    // === СОЗДАНИЕ НОВОЙ РАКЕТЫ type 11 В ТОЧКЕ ПЕРИГЕЯ ===
-                    const speed = 10 + Math.random() * 5; // Случайная скорость
-                    const phi = this.phi; // Текущий угол
-                    const enemy = new EnemyTarget(this.perigee, phi, speed, "11"); // Создаем ракету type 11
-                    activeTargets.add(enemy); // Добавляем в активные цели
+                // Обычное движение по дуге
+                if (!this.turnLogic21.decelerating && !this.turnLogic21.turning && !this.turnLogic21.accelerating) {
+                    if (this.r > 0) {
+                        this.dphi = this.dphi_component / this.r;
+                    } else {
+                        this.dphi = 0;
+                    }
+                    this.phi += this.dphi * deltaTime;
+                    this.r -= this.dr_base * deltaTime;
+                    // Проверка достижения перигея и запуск ракеты
+                    if (this.r <= this.turnLogic21.separationRadius && !this.turnLogic21.missileLaunched) {
+                        const speed = 10 + Math.random() * 5;
+                        const phi = this.phi;
+                        const enemy = new EnemyTarget(this.perigee, phi, speed, "11");
+                        activeTargets.add(enemy);
+                        this.turnLogic21.missileLaunched = true;
+                    }
+                    if (this.r <= this.turnLogic21.separationRadius) {
+                        this.turnLogic21.decelerating = true;
+                        this.turnLogic21.turnElapsed = 0;
+                    }
                 }
-            } 
-            // Фаза 2: Прямолинейное движение от перигея к границе
-            else { // 'leaving'
-                this.r += this.speed * deltaTime; // Движемся строго по радиусу наружу
-                // Исчезаем при достижении границы
+                // --- Фаза замедления ---
+                if (this.turnLogic21.decelerating) {
+                    this.turnLogic21.turnElapsed += deltaTime;
+                    const t = Math.min((this.turnLogic21.separationRadius - this.r) / (this.turnLogic21.separationRadius - this.turnLogic21.minTurnRadius), 1);
+                    this.turnLogic21.currentSpeed = this.turnLogic21.speed0 * (1 - t);
+                    this.r -= Math.max(this.turnLogic21.currentSpeed, 0) * deltaTime;
+                    if (this.r <= this.turnLogic21.minTurnRadius + 0.1) {
+                        this.turnLogic21.decelerating = false;
+                        this.turnLogic21.turning = true;
+                        this.turnLogic21.turnElapsed = 0;
+                    }
+                }
+                // --- Фаза разворота (мгновенная смена направления) ---
+                if (this.turnLogic21.turning) {
+                    this.turnLogic21.currentSpeed = 0;
+                    this.turnLogic21.turning = false;
+                    this.turnLogic21.accelerating = true;
+                    this.turnLogic21.turnElapsed = 0;
+                }
+                // --- Фаза ускорения ---
+                if (this.turnLogic21.accelerating) {
+                    this.turnLogic21.turnElapsed += deltaTime;
+                    const t = Math.min((this.r - this.turnLogic21.minTurnRadius) / (this.turnLogic21.separationRadius - this.turnLogic21.minTurnRadius), 1);
+                    this.turnLogic21.currentSpeed = this.turnLogic21.speed0 * t;
+                    this.r += Math.max(this.turnLogic21.currentSpeed, 0) * deltaTime;
+                    if (this.r >= this.turnLogic21.separationRadius) {
+                        this.turnLogic21.accelerating = false;
+                        this.phase = 'leaving';
+                        this.speed = this.turnLogic21.speed0;
+                    }
+                }
+            }
+            // --- Фаза 2: Прямолинейное движение от перигея к границе (оставить как есть) ---
+            else if (this.phase === 'leaving') {
+                this.r += this.speed * deltaTime;
                 if (this.r >= config.maxRadius) {
                     return false;
                 }
@@ -413,10 +478,74 @@ class EnemyTarget extends Target {
             }
         }
 
-        // Если цель (не бомбардировщик) достигла центра, сбрасываем игру
-        if (this.r <= 0 && this.type !== '21') {
-            resetGame();
-            return false;
+        // === Логика для низколетящего бомбардировщика (type 23) ===
+        if (this.type === "23") {
+            if (this.phase === 'gone') return false;
+            // Движение к центру
+            if (!this.leaving && !this.decelerating && !this.turning && !this.accelerating) {
+                this.r -= this.currentSpeed * deltaTime;
+                if (this.phase === 'invisible' && this.r <= this.appearRadius) {
+                    this.phase = 'visible';
+                }
+                if (!this.hasSeparatedMissile && this.r <= this.separationRadius) {
+                    this.hasSeparatedMissile = true;
+                    const missile = new EnemyTarget(this.r, this.phi, 5, "11");
+                    activeTargets.add(missile);
+                    // Начинаем фазу замедления
+                    this.decelerating = true;
+                    this.turnElapsed = 0;
+                }
+            }
+            // Фаза замедления
+            if (this.decelerating) {
+                this.turnElapsed += deltaTime;
+                // Плавное замедление до 0 на участке от 70 до 68 км
+                const t = Math.min((this.separationRadius - this.r) / (this.separationRadius - this.minTurnRadius), 1);
+                this.currentSpeed = this.speed0 * (1 - t);
+                this.r -= Math.max(this.currentSpeed, 0) * deltaTime;
+                if (this.r <= this.minTurnRadius + 0.1) {
+                    this.decelerating = false;
+                    this.turning = true;
+                    this.turnElapsed = 0;
+                }
+            }
+            // Фаза разворота (мгновенная смена направления)
+            if (this.turning) {
+                // Меняем направление
+                this.reverseDirection = true;
+                this.currentSpeed = 0;
+                this.turning = false;
+                this.accelerating = true;
+                this.turnElapsed = 0;
+            }
+            // Фаза ускорения
+            if (this.accelerating) {
+                this.turnElapsed += deltaTime;
+                // Плавное ускорение до исходной скорости
+                const t = Math.min((this.r - this.minTurnRadius) / (this.separationRadius - this.minTurnRadius), 1);
+                this.currentSpeed = this.speed0 * t;
+                this.r += Math.max(this.currentSpeed, 0) * deltaTime;
+                // После прохождения 70 км снова летим с постоянной скоростью
+                if (this.r >= this.separationRadius) {
+                    this.accelerating = false;
+                    this.leaving = true;
+                    this.currentSpeed = this.speed0;
+                }
+            }
+            // Уход к границе
+            if (this.leaving) {
+                this.r += this.currentSpeed * deltaTime;
+                if (this.r >= this.appearRadius) {
+                    this.phase = 'gone';
+                    return false;
+                }
+            }
+            // Если достиг центра, сброс игры
+            if (this.r <= 0) {
+                resetGame();
+                return false;
+            }
+            return true;
         }
         
         return true; // Цель продолжает существовать
@@ -589,6 +718,8 @@ const lastKnownPositions = new Map();
 
 // Обновляем функцию отрисовки треугольника
 function drawTriangle(centerX, centerY, phi, target) {
+    // Не отображать треугольник для Type 23, если он за пределами appearRadius
+    if (target.type === "23" && target.r > target.appearRadius) return;
     const triangleSize = 15;
     const r = config.maxRadius + 20; // Размещаем треугольник за пределами радара
     
@@ -607,8 +738,10 @@ function drawTriangle(centerX, centerY, phi, target) {
     }
     
     // Рисуем треугольник
-    // Цвет треугольника: синий для type 22, белый для AntiMissile, зеленый для остальных
-    ctx.fillStyle = target.type === "22" ? '#1010ff' : (target instanceof AntiMissile ? '#ffffff' : '#00ff0');
+    // Цвет треугольника: синий для type 22, белый для AntiMissile, зеленый для type 11 и 12, зеленый для остальных
+    ctx.fillStyle = target.type === "22" ? '#2020ff' :
+        (target instanceof AntiMissile ? '#ffffff' :
+        (target.type === "11" || target.type === "12" || target.type === "21" || target.type === "23") ? '#00ff00' : '#00ff0' );
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     ctx.lineTo(points[1].x, points[1].y);
@@ -678,6 +811,9 @@ function targetPrint(deltaTime) {
                 if (!target.visible) continue; // Не отображаем, если не пора
             }
             
+            // === Логика для type 23: показываем только если phase === 'visible' ===
+            if (target.type === "23" && target.phase !== 'visible') continue;
+
             // Отображаем цель, используя последнюю известную позицию
             const lastPosition = lastKnownPositions.get(target.id);
             if (lastPosition) {
@@ -955,6 +1091,16 @@ type22Button.addEventListener('click', function() {
     const speed = 10 + Math.random() * 5;
     const phi = Math.random() * 2 * Math.PI;
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "22");
+    activeTargets.add(enemy);
+});
+
+// Добавляем обработчик для кнопки Type 23
+const type23Button = document.getElementById('type23Button');
+type23Button.addEventListener('click', function() {
+    if (!gameState.isRunning) return;
+    const speed = 7 + Math.random() * 3; // Скорость чуть меньше, чем у обычного бомбардировщика
+    const phi = Math.random() * 2 * Math.PI;
+    const enemy = new EnemyTarget(config.maxRadius, phi, speed, "23");
     activeTargets.add(enemy);
 });
 

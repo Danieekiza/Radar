@@ -39,7 +39,7 @@
         }
         #coordsDisplay {
             position: absolute; /* Устанавливаем абсолютное позиционирование для отображения координат */
-            top: 20px; /* Устанавливаем отступ сверху */
+            top: 80px; /* Устанавливаем отступ сверху ниже кнопок управления */
             left: 20px; /* Устанавливаем отступ слева */
             color: white; /* Устанавливаем цвет текста */
             background: rgba(0, 0, 0, 0.7); /* Устанавливаем полупрозрачный черный фон */
@@ -47,6 +47,7 @@
             border-radius: 5px; /* Устанавливаем скругление углов */
             font-family: Arial, sans-serif; /* Устанавливаем шрифт для текста */
             font-size: 14px; /* Устанавливаем размер шрифта для текста */
+            display: none; /* Скрываем поле координат */
         }
     </style>
 </head>
@@ -60,13 +61,27 @@
         <button id="type21Button">Type 21</button>
         <button id="type22Button">Type 22</button>
         <button id="type23Button">Type 23</button>
+        <button id="exp15Button">exp15</button>
+        <button id="exp30Button">exp30</button>
     </div>
     <canvas id="radarCanvas"></canvas>
     <div id="coordsDisplay">Координаты: (r: 0, φ: 0°)</div>
 
     <!-- Обновляем отладочное окно -->
-    <div id="debugTable" style="position: absolute; top: 74px; right: 0%; background: rgba(0, 0, 0, 0.3); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00;">
+    <div id="debugTable" style="position: absolute; top: 74px; right: 0%; background: rgba(0, 0, 0, 0.3); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00; display: none;">
         <h3 style="margin: 0 0 10px 0; color: #00ff00;">Debug Info</h3>
+        <!-- Добавляем поле для счета -->
+        <div id="scoreDisplay" style="margin-bottom: 10px; font-size: 1.2em; color: #FFD700;">
+            Score: 0
+        </div>
+        <!-- Добавляем поле для статистики сбитых целей -->
+        <div id="killStats" style="margin-bottom: 10px; font-size: 1em; color: #00ff00;">
+            <div>Type 11: <span id="stat11">0</span></div>
+            <div>Type 12: <span id="stat12">0</span></div>
+            <div>Type 21: <span id="stat21">0</span></div>
+            <div>Type 22: <span id="stat22">0</span></div>
+            <div>Type 23: <span id="stat23">0</span></div>
+        </div>
         <!-- Добавляем поле для времени -->
         <div id="gameTimer" style="margin-bottom: 10px; font-size: 1.2em;">
             Time: 0.0 sec

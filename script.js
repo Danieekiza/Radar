@@ -10,6 +10,62 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
+// Загружаем фоновые изображения для разных масштабов
+const backgroundImages = {
+    400: new Image(),
+    200: new Image(),
+    100: new Image()
+};
+
+// Загружаем изображения с обработкой ошибок
+backgroundImages[400].src = '400.png';
+backgroundImages[200].src = '200.png';
+backgroundImages[100].src = '100.png';
+
+// Обработка ошибок загрузки изображений
+Object.values(backgroundImages).forEach(img => {
+    img.onerror = function() {
+        console.warn(`Не удалось загрузить изображение: ${img.src}`);
+    };
+    img.onload = function() {
+        console.log(`Изображение загружено: ${img.src}`);
+    };
+});
+
+// Функция для отрисовки фонового изображения
+function drawBackgroundImage() {
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Определяем текущий масштаб и соответствующее изображение
+    let currentScale;
+    if (config.scaleMultiplier === 1) currentScale = 400;
+    else if (config.scaleMultiplier === 0.5) currentScale = 200;
+    else if (config.scaleMultiplier === 0.25) currentScale = 100;
+    
+    const bgImage = backgroundImages[currentScale];
+    
+    // Проверяем, загружено ли изображение и корректно ли оно
+    if (bgImage.complete && bgImage.naturalWidth > 0 && bgImage.naturalHeight > 0) {
+        // Вычисляем размеры изображения для центрирования
+        // Размер изображения должен соответствовать размеру радарного поля
+        const imageWidth = config.maxRadius * 2;
+        const imageHeight = config.maxRadius * 2;
+        
+        // Рисуем изображение по центру радара
+        ctx.drawImage(
+            bgImage,
+            centerX - imageWidth / 2,
+            centerY - imageHeight / 2,
+            imageWidth,
+            imageHeight
+        );
+    } else {
+        // Если изображение не загружено, можно нарисовать заглушку или оставить как есть
+        console.debug(`Фоновое изображение для масштаба ${currentScale} не готово к отображению`);
+    }
+}
+
 // Конфигурация радара
 const config = {
     maxRadius: 400,     // Максимальный радиус радара
@@ -56,6 +112,11 @@ scaleButton.addEventListener('click', function() {
     
     // Устанавливаем флаг принудительного обновления
     forceTargetDisplay = true;
+    
+    // Принудительно перерисовываем canvas для обновления фонового изображения
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawBackgroundImage();
 });
 
 // Отрисовка круговой сетки
@@ -239,6 +300,9 @@ function drawCursor() {
         ctx.stroke();
     }
 }
+
+// Глобальная переменная для выбранного радиуса взрыва
+let selectedExplosionRadius = 40; // По умолчанию 40
 
 // Добавляем ID для целей
 class Target {
@@ -554,10 +618,10 @@ class EnemyTarget extends Target {
 
 // Класс для анимации взрыва
 class Explosion {
-    constructor(r, phi) {
+    constructor(r, phi, explosionRadius) {
         this.r = r; // Радиус позиции взрыва
         this.phi = (phi * Math.PI) / 180; // Конвертируем угол из градусов в радианы
-        this.radius = 40; // Радиус самого взрыва в пикселях
+        this.radius = explosionRadius; // Радиус самого взрыва в пикселях (передается из AntiMissile)
         this.duration = 0.5; // Длительность анимации в секундах
         this.elapsedTime = 0; // Прошедшее время анимации
         this.isActive = true; // Флаг активности взрыва
@@ -579,7 +643,7 @@ class Explosion {
             if (target instanceof AntiMissile) {
                 targetPhi = (targetPhi * Math.PI) / 180;
             }
-            // Вычисляем разницу по X между центром взрыва и целью
+            // Вычисляем разницу по X между центром взрыва и цельюselectedExplosionRadius
             const dx = Math.cos(this.phi) * this.r - Math.cos(targetPhi) * target.r;
             // Вычисляем разницу по Y между центром взрыва и целью
             const dy = Math.sin(this.phi) * this.r - Math.sin(targetPhi) * target.r;
@@ -592,7 +656,7 @@ class Explosion {
                 if (target instanceof AntiMissile) {
                     // Создаем новый взрыв на месте уничтоженной противоракеты с задержкой
                     setTimeout(() => {
-                        const newExplosion = new Explosion(target.r, target.phi);
+                        const newExplosion = new Explosion(target.r, target.phi, target.explosionRadius);
                         activeExplosions.add(newExplosion);
                     }, 200); // Задержка 200 мс (0.2 секунды)
                 }
@@ -600,6 +664,22 @@ class Explosion {
                 activeTargets.delete(target);
                 // Удаляем последнюю известную позицию цели
                 lastKnownPositions.delete(target.id);
+                // === Начало: начисление очков ===
+                if (target instanceof EnemyTarget) {
+                    if (target.type === "11") score += 100;
+                    else if (target.type === "12") score += 250;
+                    else if (target.type === "21") score += 500;
+                    else if (target.type === "22") score += 600;
+                    else if (target.type === "23") score += 300;
+                    updateScoreDisplay();
+                }
+                // === Конец: начисление очков ===
+                // === Начало: статистика сбитых целей ===
+                if (killStats.hasOwnProperty(target.type)) {
+                    killStats[target.type]++;
+                    updateKillStatsDisplay();
+                }
+                // === Конец: статистика сбитых целей ===
             }
         }
 
@@ -678,7 +758,8 @@ class AntiMissile extends Target {
     constructor(r, phi, speed, targetAngle, targetR) {
         super(r, phi, speed, targetAngle); // Pass all parameters to the parent class
         this.targetR = targetR; // Сохраняем целевой радиус
-        console.log(`AntiMissile created with parameters: r = ${this.r}, phi = ${this.phi}, speed = ${this.speed}, targetAngle = ${this.targetAngle}, targetR = ${this.targetR}`);
+        this.explosionRadius = selectedExplosionRadius; // Радиус взрыва для этой противоракеты
+        console.log(`AntiMissile created with parameters: r = ${this.r}, phi = ${this.phi}, speed = ${this.speed}, targetAngle = ${this.targetAngle}, targetR = ${this.targetR}, explosionRadius = ${this.explosionRadius}`);
     }
 
     update(deltaTime) {
@@ -689,12 +770,11 @@ class AntiMissile extends Target {
         
         // Проверяем достижение целевого радиуса с увеличенной погрешностью
         if (Math.abs(this.r - this.targetR) < 0.2) {
-            // Получаем текущий масштаб для отображения
-            const displayScale = 400 / (scaleValues[currentScaleIndex] * 400);
-            // Создаем новый взрыв при достижении цели, передаем радиус с учетом масштаба
-            // const explosion = new Explosion(this.targetR * displayScale, this.phi);
-            const explosion = new Explosion(this.targetR, this.phi);
-            activeExplosions.add(explosion); // Добавляем взрыв в множество активных взрывов
+                    // Получаем текущий масштаб для отображения
+        const displayScale = 400 / (scaleValues[currentScaleIndex] * 400);
+        // Создаем новый взрыв при достижении цели, передаем радиус взрыва
+        const explosion = new Explosion(this.targetR, this.phi, this.explosionRadius);
+        activeExplosions.add(explosion); // Добавляем взрыв в множество активных взрывов
             return false; // Уничтожаем объект при достижении целевого радиуса
         }
         
@@ -715,6 +795,32 @@ const activeTargets = new Set();
 
 // Добавляем Map для хранения последних известных позиций целей
 const lastKnownPositions = new Map();
+
+// === Счет игры ===
+let score = 0;
+
+// === Статистика сбитых целей ===
+const killStats = {
+    "11": 0,
+    "12": 0,
+    "21": 0,
+    "22": 0,
+    "23": 0
+};
+
+function updateKillStatsDisplay() {
+    for (const type of ["11", "12", "21", "22", "23"]) {
+        const el = document.getElementById(`stat${type}`);
+        if (el) el.textContent = killStats[type];
+    }
+}
+
+function updateScoreDisplay() {
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    if (scoreDisplay) {
+        scoreDisplay.textContent = `Score: ${score}`;
+    }
+}
 
 // Обновляем функцию отрисовки треугольника
 function drawTriangle(centerX, centerY, phi, target) {
@@ -739,7 +845,7 @@ function drawTriangle(centerX, centerY, phi, target) {
     
     // Рисуем треугольник
     // Цвет треугольника: синий для type 22, белый для AntiMissile, зеленый для type 11 и 12, зеленый для остальных
-    ctx.fillStyle = target.type === "22" ? '#2020ff' :
+    ctx.fillStyle = target.type === "22" ? '#5050ff' :
         (target instanceof AntiMissile ? '#ffffff' :
         (target.type === "11" || target.type === "12" || target.type === "21" || target.type === "23") ? '#00ff00' : '#00ff0' );
     ctx.beginPath();
@@ -818,7 +924,7 @@ function targetPrint(deltaTime) {
             const lastPosition = lastKnownPositions.get(target.id);
             if (lastPosition) {
                 // Цвет точки: синий для type 22, белый для AntiMissile, зеленый для остальных
-                ctx.fillStyle = target.type === "22" ? '#3030ff' : (target instanceof AntiMissile ? '#ffffff' : '#00ff00');
+                ctx.fillStyle = target.type === "22" ? '#5050ff' : (target instanceof AntiMissile ? '#ffffff' : '#00ff00');
                 ctx.beginPath();
                 ctx.arc(lastPosition.x, lastPosition.y, 3, 0, Math.PI * 2);
                 ctx.fill();
@@ -958,6 +1064,9 @@ function animate(currentTime) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Отрисовываем фоновое изображение перед сеткой
+    drawBackgroundImage();
+
     if (gameState.isRunning) {
         for (const target of activeTargets) {
             if (!target.update(deltaTime)) { // Передаем реальное deltaTime
@@ -974,6 +1083,8 @@ function animate(currentTime) {
     
     updateGameTime();
     updateDebugTable();
+    updateScoreDisplay();
+    updateKillStatsDisplay();
 
     requestAnimationFrame(animate);
 }
@@ -1003,6 +1114,15 @@ function resetGame() {
     }, BUTTON_DELAY);
 
     currentDisplayPoint = null; // Очищаем точку при сбросе игры
+    score = 0;
+    updateScoreDisplay();
+    for (const type in killStats) killStats[type] = 0;
+    updateKillStatsDisplay();
+    
+    // Сброс радиуса взрыва к значению по умолчанию
+    selectedExplosionRadius = 40;
+    exp15Button.style.background = '#333';
+    exp30Button.style.background = '#333';
 }
 
 // Обновляем обработчик кнопки Start/Stop
@@ -1103,6 +1223,38 @@ type23Button.addEventListener('click', function() {
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "23");
     activeTargets.add(enemy);
 });
+
+// Добавляем обработчики для кнопок радиуса взрыва
+const exp15Button = document.getElementById('exp15Button');
+const exp30Button = document.getElementById('exp30Button');
+
+exp15Button.addEventListener('click', function() {
+    selectedExplosionRadius = 15;
+    console.log(`Установлен радиус взрыва: ${selectedExplosionRadius}`);
+    // Визуальная индикация выбранного радиуса
+    exp15Button.style.background = '#00ff00';
+    exp30Button.style.background = '#333';
+});
+
+exp30Button.addEventListener('click', function() {
+    selectedExplosionRadius = 30;
+    console.log(`Установлен радиус взрыва: ${selectedExplosionRadius}`);
+    // Визуальная индикация выбранного радиуса
+    exp30Button.style.background = '#00ff00';
+    exp15Button.style.background = '#333';
+});
+
+// Инициализация фонового изображения при запуске
+setTimeout(() => {
+    // Принудительно отрисовываем фоновое изображение после загрузки страницы
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawBackgroundImage();
+    
+    // Инициализация стилей кнопок радиуса взрыва (по умолчанию 40)
+    exp15Button.style.background = '#333';
+    exp30Button.style.background = '#333';
+}, 100);
 
 // Запуск анимации
 animate(performance.now());

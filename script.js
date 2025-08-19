@@ -280,6 +280,153 @@ function handleMouseMove(event) {
 
 canvas.addEventListener('mousemove', handleMouseMove);
 
+// Обработчики для режима Gun
+canvas.addEventListener('mousedown', function(event) {
+    if (event.button === 0 && gunMode) { // ЛКМ и режим Gun активен
+        isMouseDown = true;
+        startGunFire();
+        // Предотвращаем создание AntiMissile в режиме Gun
+        event.preventDefault();
+        event.stopPropagation();
+    }
+});
+
+canvas.addEventListener('mouseup', function(event) {
+    if (event.button === 0 && gunMode) { // ЛКМ и режим Gun активен
+        isMouseDown = false;
+        stopGunFire();
+        // НЕ уничтожаем существующие объекты Gun - они продолжают движение
+    }
+});
+
+// Функция для начала стрельбы
+function startGunFire() {
+    if (gunInterval) return; // Уже стреляем
+    
+    gunInterval = setInterval(() => {
+        if (isMouseDown && gunMode) {
+            createGunProjectile();
+        }
+    }, 100); // Стреляем каждые 100 мс (10 раз в секунду)
+}
+
+// Функция для остановки стрельбы
+function stopGunFire() {
+    if (gunInterval) {
+        clearInterval(gunInterval);
+        gunInterval = null;
+    }
+    // Существующие объекты Gun продолжают движение и уничтожаются естественным образом
+}
+
+// Функция для обновления состояния кнопки AESA
+function updateAESAButtonState() {
+    const aesaButton = document.getElementById('aesaButton');
+    // Кнопка активна только при запущенной игре
+    aesaButton.disabled = !gameState.isRunning;
+    aesaButton.style.opacity = gameState.isRunning ? '1' : '0.5';
+    aesaButton.style.cursor = gameState.isRunning ? 'pointer' : 'not-allowed';
+    // Визуальное состояние кнопки
+    aesaButton.style.background = aesaActive ? '#00ff00' : '#333';
+}
+
+// Функция обработки достижения центра: учитываем счетчик жизней
+function handleMissileHit() {
+    if (typeof window.missileHitCounter !== 'number') {
+        window.missileHitCounter = 1;
+    }
+    if (window.missileHitCounter <= 0) {
+        console.log('Счетчик = 0: игра остановлена при достижении центра.');
+        resetGame();
+        return;
+    }
+    // Счетчик > 0: уменьшаем на 1, игру не останавливаем
+    window.missileHitCounter -= 1;
+    console.log(`Достижение центра: счетчик уменьшен, текущее значение = ${window.missileHitCounter}`);
+}
+
+// Функция для создания снаряда Gun
+function createGunProjectile() {
+    // Вычисляем полярные координаты курсора аналогично созданию AntiMissile
+    const rect = canvas.getBoundingClientRect();
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Получаем текущий масштаб для отображения
+    const displayScale = scaleValues[currentScaleIndex];
+    
+    // Переводим в полярные координаты с учетом масштаба
+    const r = Math.sqrt(mouseX * mouseX + mouseY * mouseY) * displayScale;
+    
+    // Вычисляем угол курсора без смещения 90 градусов
+    let phi = Math.atan2(mouseY, mouseX) * (180 / Math.PI); // Угол в градусах без смещения
+    
+    // Приводим phi к диапазону [0, 360]
+    if (phi < 0) {
+        phi += 360;
+    }
+    
+    // Создаем объект Gun в начале координатов (r = 0) с направлением курсора
+    const gun = new Gun(0, phi, -30);
+    activeTargets.add(gun);
+}
+
+// Функция для проверки столкновений объектов Gun с другими объектами
+function checkGunCollisions() {
+    const gunsToCheck = new Set();
+    const targetsToCheck = new Set();
+    
+    // Разделяем объекты на Gun и остальные
+    for (const target of activeTargets) {
+        if (target instanceof Gun) {
+            gunsToCheck.add(target);
+        } else {
+            targetsToCheck.add(target);
+        }
+    }
+    
+    // Проверяем столкновения каждого Gun с каждым другим объектом
+    for (const gun of gunsToCheck) {
+        for (const target of targetsToCheck) {
+            if (gun.checkCollision(target)) {
+                // Столкновение произошло
+                console.log(`Gun столкнулся с объектом типа ${target.constructor.name}`);
+                
+                // Уничтожаем Gun (без создания анимации взрыва)
+                activeTargets.delete(gun);
+                lastKnownPositions.delete(gun.id);
+                
+                // Уничтожаем цель
+                activeTargets.delete(target);
+                lastKnownPositions.delete(target.id);
+                
+                // Если цель - AntiMissile, инициируем взрыв
+                if (target instanceof AntiMissile) {
+                    const explosion = new Explosion(target.r, target.phi, target.explosionRadius);
+                    activeExplosions.add(explosion);
+                }
+                // Если цель - EnemyTarget, начисляем очки
+                else if (target instanceof EnemyTarget) {
+                    if (target.type === "11") score += 100;
+                    else if (target.type === "12") score += 250;
+                    else if (target.type === "21") score += 500;
+                    else if (target.type === "22") score += 600;
+                    else if (target.type === "23") score += 300;
+                    updateScoreDisplay();
+                    
+                    // Обновляем статистику
+                    if (killStats.hasOwnProperty(target.type)) {
+                        killStats[target.type]++;
+                        updateKillStatsDisplay();
+                    }
+                }
+                
+                break; // Gun уже уничтожен, переходим к следующему
+            }
+        }
+    }
+}
+
 // Отрисовка курсора
 function drawCursor() {
     const centerX = canvas.width / 2;
@@ -304,6 +451,15 @@ function drawCursor() {
 // Глобальная переменная для выбранного радиуса взрыва
 let selectedExplosionRadius = 40; // По умолчанию 40
 
+// Глобальные переменные для режима Gun
+let gunMode = false; // Флаг режима оружия
+let isMouseDown = false; // Флаг зажатия ЛКМ
+let gunInterval = null; // Интервал для стрельбы
+
+// Глобальные переменные для системы AESA и счетчика попаданий
+let aesaActive = false; // Флаг активности AESA
+window.missileHitCounter = 1; // Счетчик попаданий (жизней)
+
 // Добавляем ID для целей
 class Target {
     static nextId = 1; // Статическое поле для генерации уникальных ID
@@ -324,7 +480,7 @@ class Target {
         this.r -= this.speed * Math.cos(targetAngleRad) * deltaTime;
         
         if (this.r <= 0) {
-            resetGame(); // Вызываем resetGame для остановки игры и изменения текста кнопки
+            // AntiMissile не должен триггерить счетчик — просто удаляем
             return false;
         }
         
@@ -400,7 +556,7 @@ class EnemyTarget extends Target {
             this.hasSeparatedMissile = false;
             this.separationRadius = 70; // Радиус отделения ракеты
             this.minTurnRadius = 68; // Минимальный радиус для разворота
-            this.appearRadius = 350; // Радиус появления на радаре
+            this.appearRadius = 100; // Радиус появления на радаре
             this.leaving = false;
             this.turning = false;
             this.decelerating = false;
@@ -548,7 +704,9 @@ class EnemyTarget extends Target {
             // Движение к центру
             if (!this.leaving && !this.decelerating && !this.turning && !this.accelerating) {
                 this.r -= this.currentSpeed * deltaTime;
-                if (this.phase === 'invisible' && this.r <= this.appearRadius) {
+                // Используем радиус появления в зависимости от состояния AESA
+                const currentAppearRadius = aesaActive ? 350 : 100;
+                if (this.phase === 'invisible' && this.r <= currentAppearRadius) {
                     this.phase = 'visible';
                 }
                 if (!this.hasSeparatedMissile && this.r <= this.separationRadius) {
@@ -604,14 +762,18 @@ class EnemyTarget extends Target {
                     return false;
                 }
             }
-            // Если достиг центра, сброс игры
+            // Если достиг центра, обрабатываем прилет Missile
             if (this.r <= 0) {
-                resetGame();
+                handleMissileHit();
                 return false;
             }
             return true;
         }
-        
+        // Общая проверка: если любая цель достигла центра — остановить игру
+        if (this.r <= 0) {
+            handleMissileHit();
+            return false;
+        }
         return true; // Цель продолжает существовать
     }
 }
@@ -753,6 +915,54 @@ class Explosion {
 // Множество для хранения активных взрывов
 const activeExplosions = new Set();
 
+// Класс Gun, унаследованный от Target
+class Gun extends Target {
+    constructor(r, phi, speed) {
+        super(r, phi, speed, 0); // Вызываем конструктор родительского класса
+        this.initialR = r; // Сохраняем начальный радиус для проверки достижения 75 км
+        console.log(`Gun created with parameters: r = ${this.r}, phi = ${this.phi}, speed = ${this.speed}`);
+    }
+
+    update(deltaTime) {
+        // Движение от центра к периферии (отрицательная скорость)
+        this.r -= this.speed * deltaTime;
+        
+        // Уничтожаем Gun при достижении области 75 км
+        if (this.r >= 75) {
+            return false;
+        }
+        
+        // Уничтожаем Gun при выходе за пределы радара
+        if (this.r < 0) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    // Метод для проверки столкновения с другими объектами
+    checkCollision(target) {
+        // Если цель - AntiMissile, преобразуем phi в радианы
+        let targetPhi = target.phi;
+        if (target instanceof AntiMissile) {
+            targetPhi = (targetPhi * Math.PI) / 180;
+        }
+        
+        // Для Gun phi в градусах без смещения, преобразуем в радианы
+        const gunPhiRad = (this.phi * Math.PI) / 180;
+        
+        // Вычисляем разницу по X между Gun и целью
+        const dx = Math.cos(gunPhiRad) * this.r - Math.cos(targetPhi) * target.r;
+        // Вычисляем разницу по Y между Gun и целью
+        const dy = Math.sin(gunPhiRad) * this.r - Math.sin(targetPhi) * target.r;
+        // Вычисляем расстояние между Gun и целью
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Проверяем столкновение с радиусом 2
+        return distance <= 1;
+    }
+}
+
 // Класс AntiMissile, унаследованный от Target
 class AntiMissile extends Target {
     constructor(r, phi, speed, targetAngle, targetR) {
@@ -779,7 +989,7 @@ class AntiMissile extends Target {
         }
         
         if (this.r <= 0) {
-            resetGame(); // Вызываем resetGame для остановки игры и изменения текста кнопки
+            handleMissileHit(); // Обрабатываем прилет Missile в центр
             return false;
         }
         
@@ -822,10 +1032,15 @@ function updateScoreDisplay() {
     }
 }
 
+// Счетчик прилетов удален
+
 // Обновляем функцию отрисовки треугольника
 function drawTriangle(centerX, centerY, phi, target) {
-    // Не отображать треугольник для Type 23, если он за пределами appearRadius
-    if (target.type === "23" && target.r > target.appearRadius) return;
+    // Не отображать треугольник для Type 23, если он за пределами текущего радиуса появления
+    if (target.type === "23") {
+        const currentAppearRadius = aesaActive ? 350 : 100;
+        if (target.r > currentAppearRadius) return;
+    }
     const triangleSize = 15;
     const r = config.maxRadius + 20; // Размещаем треугольник за пределами радара
     
@@ -875,7 +1090,13 @@ function targetPrint(deltaTime) {
         }
         
         // Нормализуем углы для корректного сравнения
-        const normalizedTargetPhi = ((targetPhi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        let normalizedTargetPhi;
+        if (target instanceof Gun) {
+            // Для Gun используем угол в градусах без смещения, конвертируем в радианы
+            normalizedTargetPhi = ((targetPhi * Math.PI / 180) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+        } else {
+            normalizedTargetPhi = ((targetPhi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        }
         const currentAngle = ((radarLine.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
         const lastAngle = ((radarLine.lastAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
         
@@ -923,10 +1144,22 @@ function targetPrint(deltaTime) {
             // Отображаем цель, используя последнюю известную позицию
             const lastPosition = lastKnownPositions.get(target.id);
             if (lastPosition) {
-                // Цвет точки: синий для type 22, белый для AntiMissile, зеленый для остальных
-                ctx.fillStyle = target.type === "22" ? '#5050ff' : (target instanceof AntiMissile ? '#ffffff' : '#00ff00');
+                // Цвет точки: синий для type 22, белый для AntiMissile и Gun, зеленый для остальных
+                let pointColor = '#00ff00'; // По умолчанию зеленый
+                let pointSize = 3; // По умолчанию стандартный размер
+                
+                if (target.type === "22") {
+                    pointColor = '#5050ff'; // Синий для type 22
+                } else if (target instanceof AntiMissile) {
+                    pointColor = '#ffffff'; // Белый для AntiMissile
+                } else if (target instanceof Gun) {
+                    pointColor = '#ffffff'; // Белый для Gun
+                    pointSize = 1.5; // В два раза меньше стандартной точки
+                }
+                
+                ctx.fillStyle = pointColor;
                 ctx.beginPath();
-                ctx.arc(lastPosition.x, lastPosition.y, 3, 0, Math.PI * 2);
+                ctx.arc(lastPosition.x, lastPosition.y, pointSize, 0, Math.PI * 2);
                 ctx.fill();
             }
         } else {
@@ -958,6 +1191,11 @@ let clickY = 0;
 
 // Обработчик нажатия на левую кнопку мыши
 canvas.addEventListener('click', function(event) {
+    // Если активен режим Gun, не создаем AntiMissile
+    if (gunMode) {
+        return;
+    }
+    
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left; // Вычисляем координату X относительно канваса
     const mouseY = event.clientY - rect.top; // Вычисляем координату Y относительно канваса
@@ -1002,6 +1240,11 @@ function updateDebugTable() {
     tableBody.innerHTML = ''; // Очищаем таблицу
 
     for (const target of activeTargets) {
+        // Исключаем объекты Gun из отладочной таблицы
+        if (target instanceof Gun) {
+            continue;
+        }
+        
         const row = document.createElement('tr');
         
         // Преобразуем угол в градусы для отображения
@@ -1068,6 +1311,9 @@ function animate(currentTime) {
     drawBackgroundImage();
 
     if (gameState.isRunning) {
+        // Проверяем столкновения объектов Gun с другими объектами
+        checkGunCollisions();
+        
         for (const target of activeTargets) {
             if (!target.update(deltaTime)) { // Передаем реальное deltaTime
                 activeTargets.delete(target);
@@ -1084,6 +1330,7 @@ function animate(currentTime) {
     updateGameTime();
     updateDebugTable();
     updateScoreDisplay();
+    // Счетчик прилетов удален
     updateKillStatsDisplay();
 
     requestAnimationFrame(animate);
@@ -1123,6 +1370,27 @@ function resetGame() {
     selectedExplosionRadius = 40;
     exp15Button.style.background = '#333';
     exp30Button.style.background = '#333';
+    
+    // Сброс режима Gun
+    gunMode = false;
+    gunButton.style.background = '#333';
+    if (gunInterval) {
+        clearInterval(gunInterval);
+        gunInterval = null;
+    }
+    isMouseDown = false;
+    
+    // Очищаем все объекты Gun при сбросе игры
+    for (const target of activeTargets) {
+        if (target instanceof Gun) {
+            activeTargets.delete(target);
+            lastKnownPositions.delete(target.id);
+        }
+    }
+    
+    // Сброс системы AESА
+    aesaActive = false; // AESA неактивна
+    window.missileHitCounter = 1; // Сброс счетчика жизней
 }
 
 // Обновляем обработчик кнопки Start/Stop
@@ -1244,6 +1512,41 @@ exp30Button.addEventListener('click', function() {
     exp15Button.style.background = '#333';
 });
 
+// Добавляем обработчик для кнопки Gun
+const gunButton = document.getElementById('gunButton');
+gunButton.addEventListener('click', function() {
+    if (!gameState.isRunning) return;
+    
+    // Переключаем режим Gun
+    gunMode = !gunMode;
+    
+    if (gunMode) {
+        // Активируем режим Gun
+        this.style.background = '#00ff00';
+        console.log('Режим Gun активирован');
+    } else {
+        // Деактивируем режим Gun
+        this.style.background = '#333';
+        console.log('Режим Gun деактивирован');
+        
+        // Останавливаем стрельбу если она была активна
+        if (gunInterval) {
+            clearInterval(gunInterval);
+            gunInterval = null;
+        }
+        isMouseDown = false;
+    }
+});
+
+// Добавляем обработчик для кнопки AESA
+const aesaButton = document.getElementById('aesaButton');
+aesaButton.addEventListener('click', function() {
+    if (!gameState.isRunning) return;
+    aesaActive = !aesaActive;
+    console.log(`AESA ${aesaActive ? 'включена' : 'выключена'}`);
+    updateAESAButtonState();
+});
+
 // Инициализация фонового изображения при запуске
 setTimeout(() => {
     // Принудительно отрисовываем фоновое изображение после загрузки страницы
@@ -1254,6 +1557,12 @@ setTimeout(() => {
     // Инициализация стилей кнопок радиуса взрыва (по умолчанию 40)
     exp15Button.style.background = '#333';
     exp30Button.style.background = '#333';
+    
+    // Инициализация стиля кнопки Gun
+    gunButton.style.background = '#333';
+    
+    // Инициализация стиля кнопки AESA
+    updateAESAButtonState();
 }, 100);
 
 // Запуск анимации

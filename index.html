@@ -63,20 +63,21 @@
         <button id="type23Button">Type 23</button>
         <button id="exp15Button">exp15</button>
         <button id="exp30Button">exp30</button>
-        <button id="gunButton">Gun</button>
-        <button id="aesaButton">AESA</button>
     </div>
     <canvas id="radarCanvas"></canvas>
     <div id="coordsDisplay">Координаты: (r: 0, φ: 0°)</div>
 
     <!-- Обновляем отладочное окно -->
-    <div id="debugTable" style="position: absolute; top: 74px; right: 0%; background: rgba(0, 0, 0, 0.3); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00;">
+    <div id="debugTable" style="position: absolute; top: 74px; right: 0%; background: rgba(0, 0, 0, 0.3); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00; display: none;">
         <h3 style="margin: 0 0 10px 0; color: #00ff00;">Debug Info</h3>
         <!-- Добавляем поле для счета -->
         <div id="scoreDisplay" style="margin-bottom: 10px; font-size: 1.2em; color: #FFD700;">
             Score: 0
         </div>
-        
+        <!-- Добавляем поле для счетчика попаданий -->
+        <div id="hitsDisplay" style="margin-bottom: 10px; font-size: 1.2em; color: #FF5555;">
+            Hits: 1
+        </div>
         <!-- Добавляем поле для статистики сбитых целей -->
         <div id="killStats" style="margin-bottom: 10px; font-size: 1em; color: #00ff00;">
             <div>Type 11: <span id="stat11">0</span></div>

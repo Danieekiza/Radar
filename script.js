@@ -91,11 +91,74 @@ function cartesianToPolar(x, y) {
 
 // Обработчик кнопки масштаба
 const scaleButton = document.getElementById('scaleButton');
+const gunButton = document.getElementById('gunButton');
+const afarButton = document.getElementById('afarButton');
 const scaleValues = [1, 0.5, 0.25]; // Масштабы для 400, 200 и 100 км
 const scaleLabels = ['400 km', '200 km', '100 km']; // Соответствующие подписи
 let currentScaleIndex = 0; // Начинаем с 400 км
+let isGunActive = false; // Состояние кнопки Gun
+let isAfarActive = false; // Состояние кнопки AFAR
 
 scaleButton.textContent = scaleLabels[currentScaleIndex]; // Устанавливаем начальную подпись
+
+function getType23AppearRadius() {
+    return isAfarActive ? 300 : 100;
+}
+
+function applyType23AppearRadiusToExistingTargets() {
+    const appearRadius = getType23AppearRadius();
+    for (const target of activeTargets) {
+        if (target instanceof EnemyTarget && target.type === "23") {
+            const prevAppearRadius = target.appearRadius;
+            target.appearRadius = appearRadius;
+
+            // Синхронизируем фазу обнаружения после смены радиуса
+            // (кроме объектов, уже покинувших поле)
+            if (target.phase !== 'gone') {
+                target.phase = target.r <= target.appearRadius ? 'visible' : 'invisible';
+            }
+
+            if (prevAppearRadius !== target.appearRadius) {
+                console.log(`[Type 23] Detection radius changed: id=${target.id}, appearRadius=${target.appearRadius}`);
+            }
+        }
+    }
+}
+
+function setAfarState(active) {
+    const prevState = isAfarActive;
+    isAfarActive = active;
+    if (afarButton) {
+        afarButton.style.background = isAfarActive ? '#00aa00' : '#333';
+    }
+    if (prevState !== isAfarActive) {
+        console.log(`[AFAR] State changed: ${isAfarActive ? 'ACTIVE' : 'INACTIVE'}`);
+    }
+    // При любом изменении AFAR синхронизируем радиус обнаружения всех существующих Type 23
+    applyType23AppearRadiusToExistingTargets();
+}
+
+// Обновление доступности и вида кнопки Gun в зависимости от масштаба
+function updateGunAvailability() {
+    if (!gunButton) return;
+
+    if (currentScaleIndex === 2) { // Масштаб 100 км
+        gunButton.disabled = false;
+        gunButton.style.background = isGunActive ? '#00aa00' : '#333';
+    } else {
+        // При масштабе 400 или 200 км режим Gun всегда выключен и недоступен
+        isGunActive = false;
+        gunButton.disabled = true;
+        gunButton.style.background = '#555';
+
+        // Масштабная кнопка в этом случае всегда активна
+        scaleButton.disabled = false;
+        scaleButton.style.background = '#333';
+    }
+}
+
+// Инициализация состояния Gun при старте
+updateGunAvailability();
 
 // Добавляем флаг для принудительного обновления отображения
 let forceTargetDisplay = false;
@@ -104,6 +167,9 @@ let forceTargetDisplay = false;
 let currentDisplayPoint = null;
 
 scaleButton.addEventListener('click', function() {
+    // Если активен режим Gun, масштаб менять нельзя
+    if (isGunActive) return;
+    
     if (!gameState.buttonEnabled) return;
     
     currentScaleIndex = (currentScaleIndex + 1) % scaleValues.length;
@@ -117,6 +183,9 @@ scaleButton.addEventListener('click', function() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     drawBackgroundImage();
+
+    // Обновляем доступность Gun после смены масштаба
+    updateGunAvailability();
 });
 
 // Отрисовка круговой сетки
@@ -400,7 +469,7 @@ class EnemyTarget extends Target {
             this.hasSeparatedMissile = false;
             this.separationRadius = 70; // Радиус отделения ракеты
             this.minTurnRadius = 68; // Минимальный радиус для разворота
-            this.appearRadius = 350; // Радиус появления на радаре
+            this.appearRadius = getType23AppearRadius(); // Радиус обнаружения зависит от AFAR
             this.leaving = false;
             this.turning = false;
             this.decelerating = false;
@@ -550,6 +619,14 @@ class EnemyTarget extends Target {
 
         // === Логика для низколетящего бомбардировщика (type 23) ===
         if (this.type === "23") {
+            // Гарантированно синхронизируем радиус обнаружения с текущим состоянием AFAR
+            // для всех существующих Type 23 на каждом обновлении.
+            const nextAppearRadius = getType23AppearRadius();
+            if (this.appearRadius !== nextAppearRadius) {
+                this.appearRadius = nextAppearRadius;
+                console.log(`[Type 23] Detection radius changed: id=${this.id}, appearRadius=${this.appearRadius}`);
+            }
+
             if (this.phase === 'gone') return false;
             // Движение к центру
             if (!this.leaving && !this.decelerating && !this.turning && !this.accelerating) {
@@ -773,14 +850,68 @@ class AntiMissile extends Target {
         
         // Обновляем позицию с учетом реального времени
         this.r -= this.speed * Math.cos(targetAngleRad) * deltaTime;
-        
-        // Проверяем достижение целевого радиуса с увеличенной погрешностью
-        if (Math.abs(this.r - this.targetR) < 0.2) {
-                    // Получаем текущий масштаб для отображения
-        const displayScale = 400 / (scaleValues[currentScaleIndex] * 400);
-        // Создаем новый взрыв при достижении цели, передаем радиус взрыва
-        const explosion = new Explosion(this.targetR, this.phi, this.explosionRadius);
-        activeExplosions.add(explosion); // Добавляем взрыв в множество активных взрывов
+
+        // Gun-логика (перехват/взрыв по фиксированному радиусу и по пересечению с Missile)
+        if (isGunActive) {
+            const gunMaxR = 75;
+            const gunIntersectionRadius = 2;
+            const gunExplosionRadius = 2;
+
+            // 1) Взрыв при достижении максимального радиуса r = 75
+            if (this.r >= gunMaxR) {
+                const explosion = new Explosion(gunMaxR, this.phi, gunExplosionRadius);
+                activeExplosions.add(explosion);
+                return false;
+            }
+
+            // 2) Взрыв при пересечении AntiMissile с Missile (EnemyTarget) на расстоянии r = 2
+            const targetsToCheck = new Set(activeTargets);
+            const antiPhiRad = (this.phi * Math.PI) / 180; // AntiMissile.phi хранится в градусах
+
+            for (const target of targetsToCheck) {
+                // "Missile" в проекте — это EnemyTarget разных типов
+                if (!(target instanceof EnemyTarget)) continue;
+                if (target.r == null) continue;
+
+                const targetPhiRad = target.phi; // EnemyTarget.phi хранится в радианах
+
+                const dx = Math.cos(antiPhiRad) * this.r - Math.cos(targetPhiRad) * target.r;
+                const dy = Math.sin(antiPhiRad) * this.r - Math.sin(targetPhiRad) * target.r;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance <= gunIntersectionRadius) {
+                    // Регистрируем взрыв (для визуализации)
+                    const explosion = new Explosion(this.r, this.phi, gunExplosionRadius);
+                    activeExplosions.add(explosion);
+
+                    // Уничтожаем Missile и начисляем очки/статистику так же, как делает Explosion.checkCollisions
+                    activeTargets.delete(target);
+                    lastKnownPositions.delete(target.id);
+
+                    if (target instanceof EnemyTarget) {
+                        if (target.type === "11") score += 100;
+                        else if (target.type === "12") score += 250;
+                        else if (target.type === "21") score += 500;
+                        else if (target.type === "22") score += 600;
+                        else if (target.type === "23") score += 300;
+                        updateScoreDisplay();
+                    }
+
+                    if (killStats.hasOwnProperty(target.type)) {
+                        killStats[target.type]++;
+                        updateKillStatsDisplay();
+                    }
+
+                    // Уничтожаем и сам AntiMissile
+                    return false;
+                }
+            }
+        }
+
+        // Проверяем достижение целевого радиуса с увеличенной погрешностью (не-Gun режим)
+        if (!isGunActive && Math.abs(this.r - this.targetR) < 0.2) {
+            const explosion = new Explosion(this.targetR, this.phi, this.explosionRadius);
+            activeExplosions.add(explosion); // Добавляем взрыв в множество активных взрывов
             return false; // Уничтожаем объект при достижении целевого радиуса
         }
         
@@ -839,6 +970,12 @@ function updateHitsDisplay() {
 }
 
 function registerHit() {
+    // AFAR "поглощает" один прилет: игра не останавливается, AFAR деактивируется
+    if (isAfarActive) {
+        setAfarState(false);
+        return;
+    }
+
     // Уменьшаем счетчик при попадании
     hits = Math.max(0, hits - 1);
     updateHitsDisplay();
@@ -982,8 +1119,98 @@ const BUTTON_DELAY = 1000; // Унифицированная задержка 1 
 let clickX = 0;
 let clickY = 0;
 
-// Обработчик нажатия на левую кнопку мыши
+let gunFireIntervalId = null;
+let isGunMouseDown = false;
+// Координаты курсора относительно центра canvas (используются для пересчёта r/phi при каждом создании)
+let gunCursorX = 0;
+let gunCursorY = 0;
+
+function stopGunFiring() {
+    if (gunFireIntervalId) {
+        clearInterval(gunFireIntervalId);
+        gunFireIntervalId = null;
+    }
+    isGunMouseDown = false;
+}
+
+function spawnGunAntiMissile() {
+    const gunSpeed = -20;          // скорость
+    const gunExplosionRadius = 2; // радиус взрыва
+
+    // Gun-направление зависит от текущего положения курсора
+    let phi = Math.atan2(gunCursorY, gunCursorX) * (180 / Math.PI); // градусы
+    if (phi < 0) phi += 360;
+
+    // По ТЗ для Gun: взрыв на максимальном радиусе r = 75
+    const gunMaxR = 75;
+    // r (первый аргумент) — стартовый радиус, targetR (последний аргумент) — радиус, на котором будет взрыв
+    const antiMissile = new AntiMissile(1, phi, gunSpeed, 0, gunMaxR);
+    antiMissile.explosionRadius = gunExplosionRadius;
+    activeTargets.add(antiMissile);
+}
+
+// При зажатой левой кнопке в режиме Gun создаем AntiMissile с частотой 10/сек
+canvas.addEventListener('mousedown', function (event) {
+    if (event.button !== 0) return; // только левая кнопка
+    if (!isGunActive) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left; // Вычисляем координату X относительно канваса
+    const mouseY = event.clientY - rect.top;  // Вычисляем координату Y относительно канваса
+
+    // Проверяем, находится ли клик в пределах канваса
+    if (!(mouseX >= 0 && mouseX <= canvas.width && mouseY >= 0 && mouseY <= canvas.height)) return;
+
+    isGunMouseDown = true;
+    clickX = mouseX - (canvas.width / 2);   // координата X относительно центра
+    clickY = mouseY - (canvas.height / 2);  // координата Y относительно центра
+    gunCursorX = clickX;
+    gunCursorY = clickY;
+
+    // Обновляем поле click в окне Debug Info
+    const displayScale = scaleValues[currentScaleIndex];
+    const r = Math.sqrt(gunCursorX * gunCursorX + gunCursorY * gunCursorY) * displayScale;
+    let phi = Math.atan2(gunCursorY, gunCursorX) * (180 / Math.PI);
+    if (phi < 0) phi += 360;
+
+    const clickCoordsElement = document.getElementById('clickCoords');
+    if (clickCoordsElement) {
+        clickCoordsElement.textContent = `Click: (r: ${(r).toFixed(1)}, φ: ${phi.toFixed(1)}°)`;
+    }
+
+    // Стартуем "стрельбу", если таймер ещё не запущен
+    if (!gunFireIntervalId) {
+        spawnGunAntiMissile(); // первый объект сразу (по текущей позиции курсора)
+        gunFireIntervalId = setInterval(spawnGunAntiMissile, 100); // 10 объектов/сек
+    }
+});
+
+// Во время удержания обновляем координаты курсора для пересчёта r/phi
+canvas.addEventListener('mousemove', function (event) {
+    if (!isGunActive) return;
+    if (!isGunMouseDown) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    // Если курсор ушёл за пределы canvas, не обновляем (последняя известная позиция останется)
+    if (!(mouseX >= 0 && mouseX <= canvas.width && mouseY >= 0 && mouseY <= canvas.height)) return;
+
+    clickX = mouseX - (canvas.width / 2);
+    clickY = mouseY - (canvas.height / 2);
+    gunCursorX = clickX;
+    gunCursorY = clickY;
+});
+
+// Останавливаем "стрельбу" при отпускании кнопки
+window.addEventListener('mouseup', stopGunFiring);
+canvas.addEventListener('mouseleave', stopGunFiring);
+
+// Обычное создание AntiMissile по клику (не в режиме Gun)
 canvas.addEventListener('click', function(event) {
+    if (isGunActive) return; // в Gun-режиме используем mousedown/mouseup
+
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left; // Вычисляем координату X относительно канваса
     const mouseY = event.clientY - rect.top; // Вычисляем координату Y относительно канваса
@@ -994,22 +1221,17 @@ canvas.addEventListener('click', function(event) {
         clickY = mouseY - (canvas.height / 2); // Вычисляем координату Y относительно центра канваса
 
         // Получаем текущий масштаб для отображения
-        const displayScale = scaleValues[currentScaleIndex]; // Получаем текущий масштаб (1, 0.5 или 0.25)
+        const displayScale = scaleValues[currentScaleIndex];
 
         // Переводим в полярные координаты с учетом масштаба
-        const r = Math.sqrt(clickX * clickX + clickY * clickY) * displayScale; // Радиус с учетом масштаба
+        const r = Math.sqrt(clickX * clickX + clickY * clickY) * displayScale;
         let phi = Math.atan2(clickY, clickX) * (180 / Math.PI); // Угол в градусах
-        // Приводим phi к диапазону [0, 360]
-        if (phi < 0) {
-            phi += 360; // Если угол отрицательный, добавляем 360
-        }
+        if (phi < 0) phi += 360;
 
-        console.log(`Click Coordinates: X: ${clickX}, Y: ${clickY}, r: ${r}, phi: ${phi}`); // вывод в консоль
+        console.log(`Click Coordinates: X: ${clickX}, Y: ${clickY}, r: ${r}, phi: ${phi}`);
 
-        // Создаем объект AntiMissile с заданными параметрами, включая целевой радиус
-        const antiMissile = new AntiMissile(1, phi, -15, 0, r); // Передаем r с учетом масштаба
-
-        // Добавляем antiMissile в активные цели
+        // Создаем объект AntiMissile как было раньше
+        const antiMissile = new AntiMissile(1, phi, -15, 0, r);
         activeTargets.add(antiMissile);
 
         // Обновляем поле click в окне Debug Info
@@ -1150,6 +1372,9 @@ function resetGame() {
     exp15Button.style.background = '#333';
     exp30Button.style.background = '#333';
 
+    // Сбрасываем AFAR при остановке/сбросе игры
+    setAfarState(false);
+
     // Сбрасываем счетчик попаданий
     hits = 1;
     updateHitsDisplay();
@@ -1205,6 +1430,39 @@ stopButton.addEventListener('click', function() {
     }
 });
 
+// Кнопка AFAR (одноразовая активация до первого прилета в центр)
+if (afarButton) {
+    afarButton.addEventListener('click', function () {
+        // Повторное нажатие не выключает AFAR
+        if (isAfarActive) return;
+        setAfarState(true);
+    });
+}
+
+// Кнопка Gun (переключатель)
+if (gunButton) {
+    gunButton.addEventListener('click', function () {
+        // Активировать Gun можно только при масштабе 100 км
+        if (currentScaleIndex !== 2 || gunButton.disabled) return;
+
+        isGunActive = !isGunActive;
+
+        if (isGunActive) {
+            gunButton.style.background = '#00aa00'; // активный цвет
+            // При активном Gun блокируем смену масштаба и делаем кнопку серой
+            scaleButton.disabled = true;
+            scaleButton.style.background = '#555';
+        } else {
+            gunButton.style.background = '#333'; // базовый цвет как у остальных
+            // При деактивации Gun снова разрешаем смену масштаба
+            scaleButton.disabled = false;
+            scaleButton.style.background = '#333';
+            // Если кнопка Gun выключена, прекращаем создание AntiMissile
+            stopGunFiring();
+        }
+    });
+}
+
 // Добавляем обработчики для новых кнопок
 const type11Button = document.getElementById('type11Button');
 const type12Button = document.getElementById('type12Button');
@@ -1254,6 +1512,9 @@ type23Button.addEventListener('click', function() {
     const speed = 7 + Math.random() * 3; // Скорость чуть меньше, чем у обычного бомбардировщика
     const phi = Math.random() * 2 * Math.PI;
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "23");
+    // Радиус появления Type 23 зависит от состояния AFAR
+    enemy.appearRadius = getType23AppearRadius();
+    console.log(`[Type 23] Created: id=${enemy.id}, r=${enemy.r.toFixed(1)}, phi=${(enemy.phi * 180 / Math.PI).toFixed(1)}°, speed=${enemy.speed.toFixed(2)}, appearRadius=${enemy.appearRadius}`);
     activeTargets.add(enemy);
 });
 

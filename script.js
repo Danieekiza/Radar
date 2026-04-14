@@ -7,8 +7,19 @@ function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 }
+
+function updateUILayout() {
+    const isLandscape = window.innerWidth > window.innerHeight;
+    document.body.classList.toggle('landscape-layout', isLandscape);
+    document.body.classList.toggle('portrait-layout', !isLandscape);
+}
+
 resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+updateUILayout();
+window.addEventListener('resize', function () {
+    resizeCanvas();
+    updateUILayout();
+});
 
 // Загружаем фоновые изображения для разных масштабов
 const backgroundImages = {
@@ -92,72 +103,160 @@ function cartesianToPolar(x, y) {
 // Обработчик кнопки масштаба
 const scaleButton = document.getElementById('scaleButton');
 const gunButton = document.getElementById('gunButton');
+const c300Button = document.getElementById('c300Button');
+const c400Button = document.getElementById('c400Button');
+const c300PlusButton = document.getElementById('c300PlusButton');
+const c400PlusButton = document.getElementById('c400PlusButton');
+const gunPlusButton = document.getElementById('gunPlusButton');
+const c300ButtonImg = document.getElementById('c300ButtonImg');
+const c400ButtonImg = document.getElementById('c400ButtonImg');
+const gunButtonImg = document.getElementById('gunButtonImg');
+const currencyDisplay = document.getElementById('currencyDisplay');
+const c300CountDisplay = document.getElementById('c300CountDisplay');
+const c400CountDisplay = document.getElementById('c400CountDisplay');
+const gunCountDisplay = document.getElementById('gunCountDisplay');
 const afarButton = document.getElementById('afarButton');
+const afarButtonImg = document.getElementById('afarButtonImg');
+const afarStateDisplay = document.getElementById('afarStateDisplay');
 const scaleValues = [1, 0.5, 0.25]; // Масштабы для 400, 200 и 100 км
 const scaleLabels = ['400 km', '200 km', '100 km']; // Соответствующие подписи
 let currentScaleIndex = 0; // Начинаем с 400 км
 let isGunActive = false; // Состояние кнопки Gun
-let isAfarActive = false; // Состояние кнопки AFAR
+let selectedWeapon = null; // C300 | C400 | GUN | null
+
+// Экономика и боезапас
+const START_CURRENCY = 100000;
+const AFAR_COST = 8000;
+const TYPE23_BASE_APPEAR_RADIUS = 100;
+const TYPE23_AFAR_APPEAR_RADIUS = 300;
+const C300_PACK_SIZE = 4;
+const C300_PACK_COST = 1000;
+const C400_PACK_SIZE = 4;
+const C400_PACK_COST = 1400;
+const GUN_PACK_SIZE = 10;
+const GUN_PACK_COST = 800;
+let currency = START_CURRENCY;
+let c300Count = 0;
+let c400Count = 0;
+let gunCount = 0;
+let isAFARActive = false;
 
 scaleButton.textContent = scaleLabels[currentScaleIndex]; // Устанавливаем начальную подпись
 
 function getType23AppearRadius() {
-    return isAfarActive ? 300 : 100;
+    return isAFARActive ? TYPE23_AFAR_APPEAR_RADIUS : TYPE23_BASE_APPEAR_RADIUS;
 }
 
-function applyType23AppearRadiusToExistingTargets() {
-    const appearRadius = getType23AppearRadius();
-    for (const target of activeTargets) {
-        if (target instanceof EnemyTarget && target.type === "23") {
-            const prevAppearRadius = target.appearRadius;
-            target.appearRadius = appearRadius;
+function updateEconomyDisplay() {
+    if (currencyDisplay) currencyDisplay.textContent = currency.toString();
+    if (c300CountDisplay) c300CountDisplay.textContent = `C300: ${c300Count}`;
+    if (c400CountDisplay) c400CountDisplay.textContent = `C400: ${c400Count}`;
+    if (gunCountDisplay) gunCountDisplay.textContent = `Gun: ${gunCount}`;
 
-            // Синхронизируем фазу обнаружения после смены радиуса
-            // (кроме объектов, уже покинувших поле)
-            if (target.phase !== 'gone') {
-                target.phase = target.r <= target.appearRadius ? 'visible' : 'invisible';
-            }
-
-            if (prevAppearRadius !== target.appearRadius) {
-                console.log(`[Type 23] Detection radius changed: id=${target.id}, appearRadius=${target.appearRadius}`);
-            }
-        }
-    }
+    updateAFARButtonState();
 }
 
-function setAfarState(active) {
-    const prevState = isAfarActive;
-    isAfarActive = active;
-    if (afarButton) {
-        afarButton.style.background = isAfarActive ? '#00aa00' : '#333';
+function updateAFARButtonState() {
+    if (!afarButton) return;
+
+    const canActivate = !isAFARActive && currency >= AFAR_COST;
+    afarButton.disabled = !canActivate;
+
+    if (afarStateDisplay) {
+        afarStateDisplay.textContent = isAFARActive ? 'AFAR: ON' : 'AFAR: OFF';
     }
-    if (prevState !== isAfarActive) {
-        console.log(`[AFAR] State changed: ${isAfarActive ? 'ACTIVE' : 'INACTIVE'}`);
+
+    // Спрайт AFAR: активировано/деактивировано.
+    if (afarButtonImg) {
+        afarButton.style.background = 'transparent';
+        afarButtonImg.src = isAFARActive ? 'AFAR_activ.png' : 'AFAR_deactiv.png';
     }
-    // При любом изменении AFAR синхронизируем радиус обнаружения всех существующих Type 23
-    applyType23AppearRadiusToExistingTargets();
+    // Hits в таблице Targets зависит от текущего состояния AFAR.
+    updateHitsDisplay();
 }
 
-// Обновление доступности и вида кнопки Gun в зависимости от масштаба
-function updateGunAvailability() {
-    if (!gunButton) return;
+function updateWeaponButtonsState() {
+    const c300Ready = c300Count > 0;
+    const c400Ready = c400Count > 0;
+    const gunReadyByScale = currentScaleIndex === 2;
+    const gunReady = gunCount > 0 && gunReadyByScale;
 
-    if (currentScaleIndex === 2) { // Масштаб 100 км
-        gunButton.disabled = false;
-        gunButton.style.background = isGunActive ? '#00aa00' : '#333';
-    } else {
-        // При масштабе 400 или 200 км режим Gun всегда выключен и недоступен
+    if (selectedWeapon === 'C300' && !c300Ready) selectedWeapon = null;
+    if (selectedWeapon === 'C400' && !c400Ready) selectedWeapon = null;
+    if (selectedWeapon === 'GUN' && !gunReady) {
+        selectedWeapon = null;
         isGunActive = false;
-        gunButton.disabled = true;
-        gunButton.style.background = '#555';
-
-        // Масштабная кнопка в этом случае всегда активна
-        scaleButton.disabled = false;
-        scaleButton.style.background = '#333';
+        stopGunFiring();
     }
+
+    c300Button.disabled = !c300Ready;
+    c400Button.disabled = !c400Ready;
+    gunButton.disabled = !gunReady;
+
+    c300Button.style.background = selectedWeapon === 'C300' && c300Ready ? '#00aa00' : (c300Ready ? '#333' : '#555');
+    c400Button.style.background = selectedWeapon === 'C400' && c400Ready ? '#00aa00' : (c400Ready ? '#333' : '#555');
+    gunButton.style.background = selectedWeapon === 'GUN' && gunReady ? '#00aa00' : (gunReady ? '#333' : '#555');
+
+    // Спрайты для кнопки C300:
+    // 1) недоступна или доступна, но не активна -> C300_deactiv.png
+    // 2) активна (выбрана) -> C300_activ.png
+    if (c300ButtonImg) {
+        c300Button.style.background = 'transparent';
+        const c300IsActive = selectedWeapon === 'C300' && c300Ready;
+        c300ButtonImg.src = c300IsActive ? 'C300_activ.png' : 'C300_deactiv.png';
+    }
+
+    // Спрайты для кнопки C400:
+    // Активна только при выбранном C400.
+    if (c400ButtonImg) {
+        c400Button.style.background = 'transparent';
+        const c400IsActive = selectedWeapon === 'C400' && c400Ready;
+        c400ButtonImg.src = c400IsActive ? 'C400_activ.png' : 'C400_deactiv.png';
+    }
+
+    // Спрайты для кнопки Gun:
+    // Активна только при выбранном Gun (и он доступен по текущему масштабу).
+    if (gunButtonImg) {
+        gunButton.style.background = 'transparent';
+        const gunIsActive = selectedWeapon === 'GUN' && isGunActive && gunReady;
+        gunButtonImg.src = gunIsActive ? 'Gun_activ.png' : 'Gun_deactiv.png';
+    }
+
+    c300PlusButton.disabled = currency < C300_PACK_COST;
+    c400PlusButton.disabled = currency < C400_PACK_COST;
+    gunPlusButton.disabled = currency < GUN_PACK_COST;
+
+    // Кнопка масштаба всегда активна по ТЗ.
+    scaleButton.disabled = false;
+    scaleButton.style.background = '#333';
 }
 
-// Инициализация состояния Gun при старте
+function buyAmmo(type) {
+    if (type === 'C300') {
+        if (currency < C300_PACK_COST) return;
+        currency -= C300_PACK_COST;
+        c300Count += C300_PACK_SIZE;
+    } else if (type === 'C400') {
+        if (currency < C400_PACK_COST) return;
+        currency -= C400_PACK_COST;
+        c400Count += C400_PACK_SIZE;
+    } else if (type === 'GUN') {
+        if (currency < GUN_PACK_COST) return;
+        currency -= GUN_PACK_COST;
+        gunCount += GUN_PACK_SIZE;
+    }
+
+    updateEconomyDisplay();
+    updateWeaponButtonsState();
+}
+
+// Обновление доступности и вида кнопок вооружения
+function updateGunAvailability() {
+    updateWeaponButtonsState();
+}
+
+// Инициализация интерфейса вооружения при старте
+updateEconomyDisplay();
 updateGunAvailability();
 
 // Добавляем флаг для принудительного обновления отображения
@@ -167,8 +266,12 @@ let forceTargetDisplay = false;
 let currentDisplayPoint = null;
 
 scaleButton.addEventListener('click', function() {
-    // Если активен режим Gun, масштаб менять нельзя
-    if (isGunActive) return;
+    // Смена масштаба всегда доступна; при нажатии отключаем Gun-режим.
+    if (isGunActive || selectedWeapon === 'GUN') {
+        isGunActive = false;
+        selectedWeapon = null;
+        stopGunFiring();
+    }
     
     if (!gameState.buttonEnabled) return;
     
@@ -371,7 +474,7 @@ function drawCursor() {
 }
 
 // Глобальная переменная для выбранного радиуса взрыва
-let selectedExplosionRadius = 40; // По умолчанию 40
+let selectedExplosionRadius = 15; // По умолчанию 15
 
 // Добавляем ID для целей
 class Target {
@@ -406,7 +509,7 @@ class Target {
 
 // Класс вражеской цели, наследующийся от Target
 // type: "11" - missile (ракета, прямолинейное движение к центру)
-// type: "12" - cruise missile (крылатая ракета, спиральное движение к центру)
+// type: "12" - cruise missile (крылатая ракета, змеевидное движение к центрту)
 // type: "21" - bomber (бомбардировщик, полет по дуге)
 class EnemyTarget extends Target {
     constructor(r, phi, speed, type) {
@@ -682,7 +785,9 @@ class EnemyTarget extends Target {
             // Уход к границе
             if (this.leaving) {
                 this.r += this.currentSpeed * deltaTime;
-                if (this.r >= this.appearRadius) {
+                // Удаляем цель только у физической границы радара, а не по радиусу обнаружения.
+                // Это позволяет уже существующим Type 23 корректно "переключаться" при изменении AFAR.
+                if (this.r >= config.maxRadius) {
                     this.phase = 'gone';
                     return false;
                 }
@@ -747,16 +852,11 @@ class Explosion {
                 activeTargets.delete(target);
                 // Удаляем последнюю известную позицию цели
                 lastKnownPositions.delete(target.id);
-                // === Начало: начисление очков ===
+                // === Начало: начисление очков и валюты ===
                 if (target instanceof EnemyTarget) {
-                    if (target.type === "11") score += 100;
-                    else if (target.type === "12") score += 250;
-                    else if (target.type === "21") score += 500;
-                    else if (target.type === "22") score += 600;
-                    else if (target.type === "23") score += 300;
-                    updateScoreDisplay();
+                    applyEnemyReward(target);
                 }
-                // === Конец: начисление очков ===
+                // === Конец: начисление очков и валюты ===
                 // === Начало: статистика сбитых целей ===
                 if (killStats.hasOwnProperty(target.type)) {
                     killStats[target.type]++;
@@ -889,12 +989,7 @@ class AntiMissile extends Target {
                     lastKnownPositions.delete(target.id);
 
                     if (target instanceof EnemyTarget) {
-                        if (target.type === "11") score += 100;
-                        else if (target.type === "12") score += 250;
-                        else if (target.type === "21") score += 500;
-                        else if (target.type === "22") score += 600;
-                        else if (target.type === "23") score += 300;
-                        updateScoreDisplay();
+                        applyEnemyReward(target);
                     }
 
                     if (killStats.hasOwnProperty(target.type)) {
@@ -952,6 +1047,24 @@ function updateKillStatsDisplay() {
     }
 }
 
+function getRewardByTargetType(type) {
+    if (type === "11") return 100;
+    if (type === "12") return 250;
+    if (type === "21") return 500;
+    if (type === "22") return 600;
+    if (type === "23") return 300;
+    return 0;
+}
+
+function applyEnemyReward(target) {
+    const reward = getRewardByTargetType(target.type);
+    if (reward <= 0) return;
+    score += reward;
+    currency += reward;
+    updateScoreDisplay();
+    updateEconomyDisplay();
+}
+
 function updateScoreDisplay() {
     const scoreDisplay = document.getElementById('scoreDisplay');
     if (scoreDisplay) {
@@ -965,14 +1078,17 @@ let hits = 1; // Инициализируется при старте/сброс
 function updateHitsDisplay() {
     const hitsDisplay = document.getElementById('hitsDisplay');
     if (hitsDisplay) {
-        hitsDisplay.textContent = `Hits: ${hits}`;
+        const hitsByAFARState = isAFARActive ? 2 : 1;
+        hitsDisplay.textContent = `Hits: ${hitsByAFARState}`;
     }
 }
 
 function registerHit() {
-    // AFAR "поглощает" один прилет: игра не останавливается, AFAR деактивируется
-    if (isAfarActive) {
-        setAfarState(false);
+    // Активный AFAR даёт дополнительную "жизнь": первый прилёт отключает AFAR.
+    if (isAFARActive) {
+        isAFARActive = false;
+        updateEconomyDisplay();
+        updateWeaponButtonsState();
         return;
     }
 
@@ -987,8 +1103,8 @@ function registerHit() {
 
 // Обновляем функцию отрисовки треугольника
 function drawTriangle(centerX, centerY, phi, target) {
-    // Не отображать треугольник для Type 23, если он за пределами appearRadius
-    if (target.type === "23" && target.r > target.appearRadius) return;
+    // Для Type 23 всегда используем текущий радиус обнаружения (зависит от AFAR).
+    if (target.type === "23" && target.r > getType23AppearRadius()) return;
     const triangleSize = 15;
     const r = config.maxRadius + 20; // Размещаем треугольник за пределами радара
     
@@ -1080,16 +1196,17 @@ function targetPrint(deltaTime) {
                 if (!target.visible) continue; // Не отображаем, если не пора
             }
             
-            // === Логика для type 23: показываем только если phase === 'visible' ===
-            if (target.type === "23" && target.phase !== 'visible') continue;
+            // === Логика для type 23: показываем только если r меньше текущего радиуса обнаружения ===
+            if (target.type === "23" && target.r > getType23AppearRadius()) continue;
 
             // Отображаем цель, используя последнюю известную позицию
             const lastPosition = lastKnownPositions.get(target.id);
             if (lastPosition) {
                 // Цвет точки: синий для type 22, белый для AntiMissile, зеленый для остальных
                 ctx.fillStyle = target.type === "22" ? '#5050ff' : (target instanceof AntiMissile ? '#ffffff' : '#00ff00');
+                const pointRadius = (target instanceof AntiMissile && target.isGunShot) ? 1.5 : 3;
                 ctx.beginPath();
-                ctx.arc(lastPosition.x, lastPosition.y, 3, 0, Math.PI * 2);
+                ctx.arc(lastPosition.x, lastPosition.y, pointRadius, 0, Math.PI * 2);
                 ctx.fill();
             }
         } else {
@@ -1126,14 +1243,26 @@ let gunCursorX = 0;
 let gunCursorY = 0;
 
 function stopGunFiring() {
+    // Если активен автоогонь, останавливаем таймер генерации снарядов.
     if (gunFireIntervalId) {
         clearInterval(gunFireIntervalId);
         gunFireIntervalId = null;
     }
+    // Сбрасываем флаг удержания кнопки мыши для режима Gun.
     isGunMouseDown = false;
 }
 
 function spawnGunAntiMissile() {
+    // Боезапас закончился: выключаем Gun-режим и обновляем UI.
+    if (gunCount <= 0) {
+        isGunActive = false;
+        selectedWeapon = null;
+        stopGunFiring();
+        updateEconomyDisplay();
+        updateWeaponButtonsState();
+        return;
+    }
+
     const gunSpeed = -20;          // скорость
     const gunExplosionRadius = 2; // радиус взрыва
 
@@ -1146,13 +1275,17 @@ function spawnGunAntiMissile() {
     // r (первый аргумент) — стартовый радиус, targetR (последний аргумент) — радиус, на котором будет взрыв
     const antiMissile = new AntiMissile(1, phi, gunSpeed, 0, gunMaxR);
     antiMissile.explosionRadius = gunExplosionRadius;
+    antiMissile.isGunShot = true;
     activeTargets.add(antiMissile);
+    gunCount -= 1;
+    updateEconomyDisplay();
+    updateWeaponButtonsState();
 }
 
 // При зажатой левой кнопке в режиме Gun создаем AntiMissile с частотой 10/сек
 canvas.addEventListener('mousedown', function (event) {
     if (event.button !== 0) return; // только левая кнопка
-    if (!isGunActive) return;
+    if (!(isGunActive && selectedWeapon === 'GUN')) return;
 
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left; // Вычисляем координату X относительно канваса
@@ -1209,7 +1342,7 @@ canvas.addEventListener('mouseleave', stopGunFiring);
 
 // Обычное создание AntiMissile по клику (не в режиме Gun)
 canvas.addEventListener('click', function(event) {
-    if (isGunActive) return; // в Gun-режиме используем mousedown/mouseup
+    if (isGunActive && selectedWeapon === 'GUN') return; // в Gun-режиме используем mousedown/mouseup
 
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left; // Вычисляем координату X относительно канваса
@@ -1230,14 +1363,34 @@ canvas.addEventListener('click', function(event) {
 
         console.log(`Click Coordinates: X: ${clickX}, Y: ${clickY}, r: ${r}, phi: ${phi}`);
 
-        // Создаем объект AntiMissile как было раньше
-        const antiMissile = new AntiMissile(1, phi, -15, 0, r);
+        // Создаем объект AntiMissile в зависимости от выбранного типа вооружения
+        if (selectedWeapon !== 'C300' && selectedWeapon !== 'C400') {
+            return; // если тип не выбран, ракета не создается
+        }
+
+        if (selectedWeapon === 'C300' && c300Count <= 0) return;
+        if (selectedWeapon === 'C400' && c400Count <= 0) return;
+
+        const explosionRadius = selectedWeapon === 'C300' ? 15 : 30;
+        // Радиус подрыва не может быть меньше самого радиуса взрыва.
+        const targetR = Math.max(r, explosionRadius);
+        const antiMissile = new AntiMissile(1, phi, -15, 0, targetR);
+        antiMissile.explosionRadius = explosionRadius;
+        antiMissile.isGunShot = false;
         activeTargets.add(antiMissile);
+
+        if (selectedWeapon === 'C300') {
+            c300Count -= 1;
+        } else {
+            c400Count -= 1;
+        }
+        updateEconomyDisplay();
+        updateWeaponButtonsState();
 
         // Обновляем поле click в окне Debug Info
         const clickCoordsElement = document.getElementById('clickCoords');
         if (clickCoordsElement) {
-            clickCoordsElement.textContent = `Click: (r: ${(r).toFixed(1)}, φ: ${phi.toFixed(1)}°)`;
+            clickCoordsElement.textContent = `Click: (r: ${(targetR).toFixed(1)}, φ: ${phi.toFixed(1)}°)`;
         } else {
             console.error("Element with ID 'clickCoords' not found.");
         }
@@ -1255,19 +1408,18 @@ function updateDebugTable() {
         // Преобразуем угол в градусы для отображения
         let displayPhi = target.phi;
         if (target instanceof EnemyTarget) {
-            displayPhi = (target.phi * 180 / Math.PI).toFixed(1);
+            displayPhi = target.phi * (180 / Math.PI);
         } else if (target instanceof AntiMissile) {
-            displayPhi = target.phi.toFixed(1);
+            displayPhi = target.phi;
         }
+        displayPhi = ((displayPhi + 90) % 360 + 360) % 360;
         
         // Создаем ячейки с данными
         const cells = [
             target.id,
             target.r.toFixed(1),
-            displayPhi,
-            target.speed.toFixed(1),
-            target.targetAngle.toFixed(1),
-            `Click: (r: ${(Math.sqrt(clickX * clickX + clickY * clickY) * scaleValues[currentScaleIndex]).toFixed(1)}, φ: ${(Math.atan2(clickY, clickX) * (180 / Math.PI) - Math.PI / 2).toFixed(1)}°)`
+            displayPhi.toFixed(1),
+            target.speed.toFixed(1)
         ];
 
         // Добавляем ячейки в строку
@@ -1367,13 +1519,18 @@ function resetGame() {
     for (const type in killStats) killStats[type] = 0;
     updateKillStatsDisplay();
     
-    // Сброс радиуса взрыва к значению по умолчанию
-    selectedExplosionRadius = 40;
-    exp15Button.style.background = '#333';
-    exp30Button.style.background = '#333';
-
-    // Сбрасываем AFAR при остановке/сбросе игры
-    setAfarState(false);
+    // Сброс вооружения и экономики при старте новой игры
+    selectedExplosionRadius = 15;
+    currency = START_CURRENCY;
+    c300Count = 0;
+    c400Count = 0;
+    gunCount = 0;
+    isAFARActive = false;
+    selectedWeapon = null;
+    isGunActive = false;
+    stopGunFiring();
+    updateEconomyDisplay();
+    updateWeaponButtonsState();
 
     // Сбрасываем счетчик попаданий
     hits = 1;
@@ -1430,36 +1587,67 @@ stopButton.addEventListener('click', function() {
     }
 });
 
-// Кнопка AFAR (одноразовая активация до первого прилета в центр)
+// Выбор вооружения C300/C400/GUN
+c300Button.addEventListener('click', function () {
+    if (c300Count <= 0) return;
+    selectedWeapon = 'C300';
+    isGunActive = false;
+    stopGunFiring();
+    selectedExplosionRadius = 15;
+    updateWeaponButtonsState();
+});
+
+c400Button.addEventListener('click', function () {
+    if (c400Count <= 0) return;
+    selectedWeapon = 'C400';
+    isGunActive = false;
+    stopGunFiring();
+    selectedExplosionRadius = 30;
+    updateWeaponButtonsState();
+});
+
+gunButton.addEventListener('click', function () {
+    if (gunCount <= 0) return;
+    if (currentScaleIndex !== 2) return; // Gun доступен только на масштабе 100
+
+    // Повторное нажатие на Gun выключает режим Gun.
+    if (selectedWeapon === 'GUN' && isGunActive) {
+        isGunActive = false;
+        selectedWeapon = null;
+        stopGunFiring();
+        updateWeaponButtonsState();
+        return;
+    }
+
+    selectedWeapon = 'GUN';
+    isGunActive = true;
+    selectedExplosionRadius = 2;
+    updateWeaponButtonsState();
+});
+
+// Покупка боезапаса
+c300PlusButton.addEventListener('click', function () {
+    buyAmmo('C300');
+});
+
+c400PlusButton.addEventListener('click', function () {
+    buyAmmo('C400');
+});
+
+gunPlusButton.addEventListener('click', function () {
+    buyAmmo('GUN');
+});
+
 if (afarButton) {
     afarButton.addEventListener('click', function () {
-        // Повторное нажатие не выключает AFAR
-        if (isAfarActive) return;
-        setAfarState(true);
-    });
-}
+        if (isAFARActive) return;
+        if (currency < AFAR_COST) return;
 
-// Кнопка Gun (переключатель)
-if (gunButton) {
-    gunButton.addEventListener('click', function () {
-        // Активировать Gun можно только при масштабе 100 км
-        if (currentScaleIndex !== 2 || gunButton.disabled) return;
+        currency -= AFAR_COST;
+        isAFARActive = true;
 
-        isGunActive = !isGunActive;
-
-        if (isGunActive) {
-            gunButton.style.background = '#00aa00'; // активный цвет
-            // При активном Gun блокируем смену масштаба и делаем кнопку серой
-            scaleButton.disabled = true;
-            scaleButton.style.background = '#555';
-        } else {
-            gunButton.style.background = '#333'; // базовый цвет как у остальных
-            // При деактивации Gun снова разрешаем смену масштаба
-            scaleButton.disabled = false;
-            scaleButton.style.background = '#333';
-            // Если кнопка Gun выключена, прекращаем создание AntiMissile
-            stopGunFiring();
-        }
+        updateEconomyDisplay();
+        updateWeaponButtonsState();
     });
 }
 
@@ -1471,8 +1659,11 @@ const type21Button = document.getElementById('type21Button');
 // Создание ракеты (type 11)
 type11Button.addEventListener('click', function() {
     if (!gameState.isRunning) return;
-    const speed = 10 + Math.random() * 5;
+    // Случайная скорость в диапазоне [10, 15): 10 + (0..1) * 5
+    const speed = 5 + Math.random() * 5;
+    // Случайный угол в радианах от 0 до 2π (любой азимут появления)
     const phi = Math.random() * 2 * Math.PI;
+    // Создаем цель Type 11 на внешней границе радара
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "11");
     activeTargets.add(enemy);
 });
@@ -1480,7 +1671,7 @@ type11Button.addEventListener('click', function() {
 // Создание крылатой ракеты (type 12)
 type12Button.addEventListener('click', function() {
     if (!gameState.isRunning) return;
-    const speed = 10 + Math.random() * 5;
+    const speed = 4 + Math.random() * 5;
     const phi = Math.random() * 2 * Math.PI;
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "12");
     activeTargets.add(enemy);
@@ -1489,53 +1680,33 @@ type12Button.addEventListener('click', function() {
 // Создание бомбардировщика (type 21)
 type21Button.addEventListener('click', function() {
     if (!gameState.isRunning) return;
-    const speed = 10 + Math.random() * 5;
+    const speed = 3 + Math.random() * 5;
     const phi = Math.random() * 2 * Math.PI;
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "21");
     activeTargets.add(enemy);
 });
 
-// Добавляем обработчик для кнопки Type 22
+// Создание бомбардировщика Stels Type 22
 const type22Button = document.getElementById('type22Button');
 type22Button.addEventListener('click', function() {
     if (!gameState.isRunning) return;
-    const speed = 10 + Math.random() * 5;
+    const speed = 3 + Math.random() * 5;
     const phi = Math.random() * 2 * Math.PI;
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "22");
     activeTargets.add(enemy);
 });
 
-// Добавляем обработчик для кнопки Type 23
+// Создание низколетящего бомбардировщика Type 23
 const type23Button = document.getElementById('type23Button');
 type23Button.addEventListener('click', function() {
     if (!gameState.isRunning) return;
-    const speed = 7 + Math.random() * 3; // Скорость чуть меньше, чем у обычного бомбардировщика
+    const speed = 3 + Math.random() * 3; // Скорость чуть меньше, чем у обычного бомбардировщика
     const phi = Math.random() * 2 * Math.PI;
     const enemy = new EnemyTarget(config.maxRadius, phi, speed, "23");
     // Радиус появления Type 23 зависит от состояния AFAR
     enemy.appearRadius = getType23AppearRadius();
     console.log(`[Type 23] Created: id=${enemy.id}, r=${enemy.r.toFixed(1)}, phi=${(enemy.phi * 180 / Math.PI).toFixed(1)}°, speed=${enemy.speed.toFixed(2)}, appearRadius=${enemy.appearRadius}`);
     activeTargets.add(enemy);
-});
-
-// Добавляем обработчики для кнопок радиуса взрыва
-const exp15Button = document.getElementById('exp15Button');
-const exp30Button = document.getElementById('exp30Button');
-
-exp15Button.addEventListener('click', function() {
-    selectedExplosionRadius = 15;
-    console.log(`Установлен радиус взрыва: ${selectedExplosionRadius}`);
-    // Визуальная индикация выбранного радиуса
-    exp15Button.style.background = '#00ff00';
-    exp30Button.style.background = '#333';
-});
-
-exp30Button.addEventListener('click', function() {
-    selectedExplosionRadius = 30;
-    console.log(`Установлен радиус взрыва: ${selectedExplosionRadius}`);
-    // Визуальная индикация выбранного радиуса
-    exp30Button.style.background = '#00ff00';
-    exp15Button.style.background = '#333';
 });
 
 // Инициализация фонового изображения при запуске
@@ -1545,9 +1716,9 @@ setTimeout(() => {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     drawBackgroundImage();
     
-    // Инициализация стилей кнопок радиуса взрыва (по умолчанию 40)
-    exp15Button.style.background = '#333';
-    exp30Button.style.background = '#333';
+    // Инициализация состояния панели вооружения
+    updateEconomyDisplay();
+    updateWeaponButtonsState();
 }, 100);
 
 // Запуск анимации

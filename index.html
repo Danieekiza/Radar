@@ -12,12 +12,20 @@
             min-height: 100vh; /* Устанавливаем минимальную высоту на 100% высоты окна */
             background: #808080; /* Устанавливаем серый фон */
             font-family: Arial, sans-serif;
+            position: relative;
+            overflow: hidden;
         }
         #controls {
             display: flex; /* Используем flexbox для размещения кнопок в одной строке */
             justify-content: center; /* Центрируем кнопки по горизонтали */
-            margin: 10px 0; /* Устанавливаем отступы сверху и снизу */
-            width: 100%; /* Занимаем всю ширину контейнера */
+            margin: 0;
+            width: auto;
+            flex-wrap: wrap;
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 8;
         }
         button {
             padding: 8px 16px; /* Устанавливаем внутренние отступы для кнопок */
@@ -33,13 +41,54 @@
         button:disabled {
             cursor: not-allowed;
         }
+        #c300Button {
+            padding: 0;
+            background: transparent;
+        }
+        #c300Button img {
+            display: block;
+            width: 100px;
+            height: 50px;
+            object-fit: contain;
+        }
+        #c400Button {
+            padding: 0;
+            background: transparent;
+        }
+        #c400Button img {
+            display: block;
+            width: 100px;
+            height: 50px;
+            object-fit: contain;
+        }
+        #gunButton {
+            padding: 0;
+            background: transparent;
+        }
+        #gunButton img {
+            display: block;
+            width: 100px;
+            height: 50px;
+            object-fit: contain;
+        }
+        #afarButton {
+            padding: 0;
+            background: transparent;
+        }
+        #afarButton img {
+            display: block;
+            /* Увеличение спрайта AFAR на ~30% относительно C300/C400 */
+            width: 100px;
+            height: 70px;
+            object-fit: contain;
+        }
         canvas {
             display: block; /* Отображаем canvas как блочный элемент */
             background-color: #000; /* Устанавливаем черный цвет фона для радара */
         }
         #coordsDisplay {
             position: absolute; /* Устанавливаем абсолютное позиционирование для отображения координат */
-            top: 80px; /* Устанавливаем отступ сверху ниже кнопок управления */
+            top: 100px; /* Устанавливаем отступ сверху ниже кнопок управления */
             left: 20px; /* Устанавливаем отступ слева */
             color: white; /* Устанавливаем цвет текста */
             background: rgba(0, 0, 0, 0.7); /* Устанавливаем полупрозрачный черный фон */
@@ -48,6 +97,28 @@
             font-family: Arial, sans-serif; /* Устанавливаем шрифт для текста */
             font-size: 14px; /* Устанавливаем размер шрифта для текста */
             display: none; /* Скрываем поле координат */
+        }
+        #ammoPanel {
+            position: absolute;
+            top: 110px;
+            right: 10px;
+            z-index: 7;
+            margin-bottom: 8px;
+            border-collapse: collapse;
+            color: white;
+            background: rgba(0, 0, 0, 0.35);
+        }
+        #debugTable {
+            position: absolute;
+            top: 110px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #00ff00;
+            padding: 10px;
+            font-family: monospace;
+            border: 1px solid #00ff00;
+            display: block;
+            z-index: 7;
         }
     </style>
 </head>
@@ -61,17 +132,55 @@
         <button id="type21Button">Type 21</button>
         <button id="type22Button">Type 22</button>
         <button id="type23Button">Type 23</button>
-        <button id="exp15Button">exp15</button>
-        <button id="exp30Button">exp30</button>
-        <button id="gunButton">Gun</button>
-        <button id="afarButton">AFAR</button>
     </div>
+    <table id="ammoPanel">
+        <tbody>
+            <tr>
+                <td style="padding: 6px 10px;">Balance: <span id="currencyDisplay">100000</span></td>
+            </tr>
+            <tr>
+                <td style="padding: 6px 10px;">
+                    <button id="c300Button" type="button" aria-label="C300">
+                        <img id="c300ButtonImg" src="C300_deactiv.png" alt="C300" />
+                    </button>
+                    <button id="c300PlusButton">+</button>
+                    <span id="c300CountDisplay">C300: 0</span>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding: 6px 10px;">
+                    <button id="c400Button" type="button" aria-label="C400">
+                        <img id="c400ButtonImg" src="C400_deactiv.png" alt="C400" />
+                    </button>
+                    <button id="c400PlusButton">+</button>
+                    <span id="c400CountDisplay">C400: 0</span>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding: 6px 10px;">
+                    <button id="gunButton" type="button" aria-label="Gun">
+                        <img id="gunButtonImg" src="Gun_deactiv.png" alt="Gun" />
+                    </button>
+                    <button id="gunPlusButton">+</button>
+                    <span id="gunCountDisplay">Gun: 0</span>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding: 6px 10px;">
+                    <button id="afarButton" type="button" aria-label="AFAR">
+                        <img id="afarButtonImg" src="AFAR_deactiv.png" alt="AFAR" />
+                    </button>
+                    <span id="afarStateDisplay" style="margin-left: 10px;">AFAR: OFF</span>
+                </td>
+            </tr>
+        </tbody>
+    </table>
     <canvas id="radarCanvas"></canvas>
     <div id="coordsDisplay">Координаты: (r: 0, φ: 0°)</div>
 
     <!-- Обновляем отладочное окно -->
-    <div id="debugTable" style="position: absolute; top: 74px; right: 0%; background: rgba(0, 0, 0, 0.3); color: #00ff00; padding: 10px; font-family: monospace; border: 1px solid #00ff00; display: none;">
-        <h3 style="margin: 0 0 10px 0; color: #00ff00;">Debug Info</h3>
+    <div id="debugTable">
+        <h3 style="margin: 0 0 10px 0; color: #00ff00;">Targets</h3>
         <!-- Добавляем поле для счета -->
         <div id="scoreDisplay" style="margin-bottom: 10px; font-size: 1.2em; color: #FFD700;">
             Score: 0
@@ -99,8 +208,6 @@
                     <th style="border: 1px solid #00ff00; padding: 5px;">r</th>
                     <th style="border: 1px solid #00ff00; padding: 5px;">φ°</th>
                     <th style="border: 1px solid #00ff00; padding: 5px;">Speed</th>
-                    <th style="border: 1px solid #00ff00; padding: 5px;">TA</th>
-                    <th style="border: 1px solid #00ff00; padding: 5px;">Click</th>
                 </tr>
             </thead>
             <tbody id="targetTableBody">

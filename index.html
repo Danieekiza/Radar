@@ -22,10 +22,17 @@
             width: auto;
             flex-wrap: wrap;
             position: absolute;
-            top: 10px;
+            top: 5px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 8;
+        }
+        #scaleButton {
+            color: #00ff00;
+        }
+        #startButton,
+        #stopButton {
+            color: #00ff00;
         }
         button {
             padding: 8px 16px; /* Устанавливаем внутренние отступы для кнопок */
@@ -44,6 +51,30 @@
         #c300Button {
             padding: 0;
             background: transparent;
+        }
+        .enemyButton {
+            padding: 0;
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            color: #ffffff;
+            min-width: 120px;
+        }
+        .enemyButton img {
+            display: block;
+            width: 100px;
+            height: 50px;
+            object-fit: contain;
+        }
+        .enemyButton .enemyLabel {
+            font-size: 12px;
+            line-height: 1.1;
+            margin-top: 2px;
+            text-align: center;
+            white-space: nowrap;
+            color: #00ff00;
         }
         #c300Button img {
             display: block;
@@ -90,7 +121,7 @@
             position: absolute; /* Устанавливаем абсолютное позиционирование для отображения координат */
             top: 100px; /* Устанавливаем отступ сверху ниже кнопок управления */
             left: 20px; /* Устанавливаем отступ слева */
-            color: white; /* Устанавливаем цвет текста */
+            color: rgb(10, 253, 2); /* Устанавливаем цвет текста */
             background: rgba(0, 0, 0, 0.7); /* Устанавливаем полупрозрачный черный фон */
             padding: 10px; /* Устанавливаем внутренние отступы */
             border-radius: 5px; /* Устанавливаем скругление углов */
@@ -105,7 +136,7 @@
             z-index: 7;
             margin-bottom: 8px;
             border-collapse: collapse;
-            color: white;
+            color: rgb(43, 255, 0);
             background: rgba(0, 0, 0, 0.35);
         }
         #debugTable {
@@ -120,6 +151,33 @@
             display: block;
             z-index: 7;
         }
+        #killStats {
+            margin-bottom: 10px;
+            font-size: 1em;
+            color: #00ff00;
+            min-width: 100px;
+        }
+        .killStatRow {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            margin: 2px 0;
+            white-space: nowrap;
+        }
+        .killStatLabel {
+            color: #00ff00;
+        }
+        .killStatDots {
+            flex: 1;
+            border-bottom: 1px dotted #00ff00;
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+        .killStatValue {
+            min-width: 18px;
+            text-align: right;
+            color: #00ff00;
+        }
     </style>
 </head>
 <body>
@@ -127,11 +185,26 @@
         <button id="scaleButton">400 km</button>
         <button id="startButton">Start</button>
         <button id="stopButton">X1</button>
-        <button id="type11Button">Type 11</button>
-        <button id="type12Button">Type 12</button>
-        <button id="type21Button">Type 21</button>
-        <button id="type22Button">Type 22</button>
-        <button id="type23Button">Type 23</button>
+        <button id="type11Button" class="enemyButton" type="button" aria-label="Type 11">
+            <img src="Missile_balistic.png" alt="Type 11" />
+            <span class="enemyLabel">Balistic missile</span>
+        </button>
+        <button id="type12Button" class="enemyButton" type="button" aria-label="Type 12">
+            <img src="cruise-missile2.png" alt="Type 12" />
+            <span class="enemyLabel">Cruise missile</span>
+        </button>
+        <button id="type21Button" class="enemyButton" type="button" aria-label="Type 21">
+            <img src="B1-B.png" alt="Type 21" />
+            <span class="enemyLabel">Bomber</span>
+        </button>
+        <button id="type22Button" class="enemyButton" type="button" aria-label="Type 22">
+            <img src="B2.png" alt="Type 22" />
+            <span class="enemyLabel">Stels bomber</span>
+        </button>
+        <button id="type23Button" class="enemyButton" type="button" aria-label="Type 23">
+            <img src="F15.png" alt="Type 23" />
+            <span class="enemyLabel">Front-line bomber</span>
+        </button>
     </div>
     <table id="ammoPanel">
         <tbody>
@@ -190,12 +263,13 @@
             Hits: 1
         </div>
         <!-- Добавляем поле для статистики сбитых целей -->
-        <div id="killStats" style="margin-bottom: 10px; font-size: 1em; color: #00ff00;">
-            <div>Type 11: <span id="stat11">0</span></div>
-            <div>Type 12: <span id="stat12">0</span></div>
-            <div>Type 21: <span id="stat21">0</span></div>
-            <div>Type 22: <span id="stat22">0</span></div>
-            <div>Type 23: <span id="stat23">0</span></div>
+        <div id="killStats">
+            <div class="killStatRow"><span class="killStatLabel">Balistic m.:</span><span class="killStatDots"></span><span id="stat11" class="killStatValue">0</span></div>
+            <div class="killStatRow"><span class="killStatLabel">Smart bomb:</span><span class="killStatDots"></span><span id="stat13" class="killStatValue">0</span></div>
+            <div class="killStatRow"><span class="killStatLabel">Cruise m.:</span><span class="killStatDots"></span><span id="stat12" class="killStatValue">0</span></div>
+            <div class="killStatRow"><span class="killStatLabel">Bomber:</span><span class="killStatDots"></span><span id="stat21" class="killStatValue">0</span></div>
+            <div class="killStatRow"><span class="killStatLabel">Stels b.:</span><span class="killStatDots"></span><span id="stat22" class="killStatValue">0</span></div>
+            <div class="killStatRow"><span class="killStatLabel">Front-line b.:</span><span class="killStatDots"></span><span id="stat23" class="killStatValue">0</span></div>
         </div>
         <!-- Добавляем поле для времени -->
         <div id="gameTimer" style="margin-bottom: 10px; font-size: 1.2em;">
@@ -205,6 +279,7 @@
             <thead>
                 <tr>
                     <th style="border: 1px solid #00ff00; padding: 5px;">ID</th>
+                    <th style="border: 1px solid #00ff00; padding: 5px;">Type</th>
                     <th style="border: 1px solid #00ff00; padding: 5px;">r</th>
                     <th style="border: 1px solid #00ff00; padding: 5px;">φ°</th>
                     <th style="border: 1px solid #00ff00; padding: 5px;">Speed</th>

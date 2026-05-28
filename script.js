@@ -509,6 +509,7 @@ class Target {
 
 // Класс вражеской цели, наследующийся от Target
 // type: "11" - missile (ракета, прямолинейное движение к центру)
+// type: "13" - smart bomb (логика движения как у type 11)
 // type: "12" - cruise missile (крылатая ракета, змеевидное движение к центрту)
 // type: "21" - bomber (бомбардировщик, полет по дуге)
 class EnemyTarget extends Target {
@@ -518,7 +519,7 @@ class EnemyTarget extends Target {
         this.type = type; // Устанавливаем тип цели
 
         // Логика для ракеты (прямолинейное движение)
-        if (this.type === "11") {
+        if (this.type === "11" || this.type === "13") {
             this.dr = speed; // 100% скорости направлено на изменение радиуса
             this.dphi = 0;   // Угловая скорость равна нулю
         } 
@@ -587,7 +588,7 @@ class EnemyTarget extends Target {
 
     update(deltaTime) {
         // Обновление для ракеты (type 11)
-        if (this.type === "11") {
+        if (this.type === "11" || this.type === "13") {
             this.r -= this.dr * deltaTime; // Движение к центру
         } 
         // Обновление для крылатой ракеты (type 12, синусоида)
@@ -739,7 +740,7 @@ class EnemyTarget extends Target {
                 }
                 if (!this.hasSeparatedMissile && this.r <= this.separationRadius) {
                     this.hasSeparatedMissile = true;
-                    const missile = new EnemyTarget(this.r, this.phi, 5, "11");
+                    const missile = new EnemyTarget(this.r, this.phi, 5, "13");
                     activeTargets.add(missile);
                     // Начинаем фазу замедления
                     this.decelerating = true;
@@ -947,12 +948,13 @@ class AntiMissile extends Target {
 
     update(deltaTime) {
         const targetAngleRad = (this.targetAngle * Math.PI) / 180;
+        const isGunShot = this.isGunShot === true;
         
         // Обновляем позицию с учетом реального времени
         this.r -= this.speed * Math.cos(targetAngleRad) * deltaTime;
 
         // Gun-логика (перехват/взрыв по фиксированному радиусу и по пересечению с Missile)
-        if (isGunActive) {
+        if (isGunShot) {
             const gunMaxR = 75;
             const gunIntersectionRadius = 2;
             const gunExplosionRadius = 2;
@@ -1003,8 +1005,8 @@ class AntiMissile extends Target {
             }
         }
 
-        // Проверяем достижение целевого радиуса с увеличенной погрешностью (не-Gun режим)
-        if (!isGunActive && Math.abs(this.r - this.targetR) < 0.2) {
+        // Проверяем достижение целевого радиуса с увеличенной погрешностью (для C300/C400 выстрелов)
+        if (!isGunShot && Math.abs(this.r - this.targetR) < 0.2) {
             const explosion = new Explosion(this.targetR, this.phi, this.explosionRadius);
             activeExplosions.add(explosion); // Добавляем взрыв в множество активных взрывов
             return false; // Уничтожаем объект при достижении целевого радиуса
@@ -1034,6 +1036,7 @@ let score = 0;
 // === Статистика сбитых целей ===
 const killStats = {
     "11": 0,
+    "13": 0,
     "12": 0,
     "21": 0,
     "22": 0,
@@ -1041,7 +1044,7 @@ const killStats = {
 };
 
 function updateKillStatsDisplay() {
-    for (const type of ["11", "12", "21", "22", "23"]) {
+    for (const type of ["11", "13", "12", "21", "22", "23"]) {
         const el = document.getElementById(`stat${type}`);
         if (el) el.textContent = killStats[type];
     }
@@ -1049,6 +1052,7 @@ function updateKillStatsDisplay() {
 
 function getRewardByTargetType(type) {
     if (type === "11") return 100;
+    if (type === "13") return 200;
     if (type === "12") return 250;
     if (type === "21") return 500;
     if (type === "22") return 600;
@@ -1123,10 +1127,10 @@ function drawTriangle(centerX, centerY, phi, target) {
     }
     
     // Рисуем треугольник
-    // Цвет треугольника: синий для type 22, белый для AntiMissile, зеленый для type 11 и 12, зеленый для остальных
+    // Цвет треугольника: синий для type 22, белый для AntiMissile, зеленый для боевых целей
     ctx.fillStyle = target.type === "22" ? '#5050ff' :
         (target instanceof AntiMissile ? '#ffffff' :
-        (target.type === "11" || target.type === "12" || target.type === "21" || target.type === "23") ? '#00ff00' : '#00ff0' );
+        (target.type === "11" || target.type === "12" || target.type === "13" || target.type === "21" || target.type === "23") ? '#00ff00' : '#00ff0' );
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     ctx.lineTo(points[1].x, points[1].y);
@@ -1417,6 +1421,7 @@ function updateDebugTable() {
         // Создаем ячейки с данными
         const cells = [
             target.id,
+            target instanceof EnemyTarget ? `Type ${target.type}` : 'AntiMissile',
             target.r.toFixed(1),
             displayPhi.toFixed(1),
             target.speed.toFixed(1)
